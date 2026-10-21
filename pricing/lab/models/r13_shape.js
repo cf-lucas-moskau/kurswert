@@ -1,0 +1,1 @@
+const { makeRidge, C, combine } = require('../ridgeModel'); module.exports = makeRidge({ cols: combine(C.base, C.trim6, C.gen, C.batt, C.opts, C.seller, (x) => ({ kw2: x.kw * x.kw, logkm: Math.log(1 + x.km * 100) })) });

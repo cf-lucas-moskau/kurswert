@@ -1,0 +1,10 @@
+{
+  "salutation": "COMPANY",
+  "firstName": "Max",
+  "lastName": "Mustermann",
+  "email": "ankauf@example.com",
+  "phoneCountry": "DE",
+  "phoneNumber": "0301234567",
+  "marginPct": 0.15,
+  "messageTemplate": "Sehr geehrte Damen und Herren,\n\nwir interessieren uns für Ihren {title} ({trim}, EZ {year}, {mileage} km).\n\nAuf Basis der aktuellen Marktlage können wir Ihnen ein Ankaufangebot in Höhe von {offer} EUR machen. Die Abholung vor Ort übernehmen wir kostenlos, die Bezahlung erfolgt sofort.\n\nBei Interesse melden Sie sich gerne telefonisch oder per E-Mail.\n\nMit freundlichen Grüßen\nMax Mustermann\nBeispiel Autohaus"
+}

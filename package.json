@@ -1,0 +1,25 @@
+{
+  "name": "kurswert",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Used-Tesla market valuation from mobile.de and AutoScout24 listings: scrapers, pricing engine and dashboard",
+  "scripts": {
+    "scrape": "node src/scrape.js",
+    "scrape-as24": "node src/scrape_autoscout.js",
+    "csv": "node src/build_csv.js",
+    "details": "node src/fetch_details.js",
+    "details-csv": "node src/build_details_csv.js",
+    "label": "node pricing/label.js",
+    "train": "node pricing/train.js",
+    "value-newest": "node pricing/value_newest.js",
+    "scrape-dealer": "node pricing/scrape_dealer.js",
+    "send-offer": "node pricing/send_offer.js",
+    "evaluate": "node pricing/evaluate.js",
+    "test": "node pricing/engine.test.js && node pricing/price_history.test.js && node pricing/load_ads.test.js",
+    "serve": "node web/serve.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "playwright": "^1.49.0"
+  }
+}

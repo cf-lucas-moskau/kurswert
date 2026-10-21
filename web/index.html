@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Kurswert · Marktbewertung</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f5f4f0;
+        --surface: #ffffff;
+        --surface-2: #efede7;
+        --line: #e2dfd7;
+        --line-strong: #cbc7bc;
+        --ink: #17181a;
+        --ink-2: #45484d;
+        --ink-3: #62656b;
+        --accent: #1d4f91;
+        --accent-hover: #163f75;
+        --on-accent: #ffffff;
+        --accent-soft: #e5edf8;
+        --good: #146c43;
+        --good-bg: #e3f1e9;
+        --good-line: #9fceb4;
+        --bad: #b02a1c;
+        --bad-bg: #fbe8e5;
+        --warn: #855000;
+        --warn-bg: #faefda;
+        --info: #0b6375;
+        --info-bg: #e0f0f3;
+        --band: #d9e2ee;
+        --ph: #e8e6e0;
+        --shadow: 0 1px 2px rgba(23, 24, 26, .05), 0 1px 1px rgba(23, 24, 26, .03);
+        --shadow-lift: 0 6px 22px rgba(23, 24, 26, .08);
+        --radius: 12px;
+        --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101113;
+          --surface: #191b1e;
+          --surface-2: #222428;
+          --line: #2c2f34;
+          --line-strong: #3c4046;
+          --ink: #ecebe6;
+          --ink-2: #c3c5c9;
+          --ink-3: #9da1a7;
+          --accent: #8db0ef;
+          --accent-hover: #a9c4f5;
+          --on-accent: #0c1830;
+          --accent-soft: #1d2a40;
+          --good: #63c98f;
+          --good-bg: #15291e;
+          --good-line: #2b5a3f;
+          --bad: #ff8f80;
+          --bad-bg: #351a17;
+          --warn: #e8b45e;
+          --warn-bg: #2f2412;
+          --info: #6ccbdd;
+          --info-bg: #11292e;
+          --band: #2b3a50;
+          --ph: #222428;
+          --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+          --shadow-lift: 0 8px 26px rgba(0, 0, 0, .45);
+        }
+      }
+      * { box-sizing: border-box; }
+      html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+      body { margin: 0; background: var(--bg); color: var(--ink);
+        font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+      button, input, select, textarea { font: inherit; color: inherit; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .num { font-variant-numeric: tabular-nums; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+      /* ---------- header ---------- */
+      .top { background: var(--surface); border-bottom: 1px solid var(--line); }
+      .top-in { max-width: 1680px; margin: 0 auto; padding: 14px 28px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+      .brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 320px; }
+      .mark { width: 30px; height: 30px; flex: none; color: var(--ink); }
+      .brand-text { min-width: 0; }
+      .wordmark { font-weight: 700; font-size: 18px; letter-spacing: -.015em; line-height: 1.15; }
+      .tagline { color: var(--ink-3); font-size: 12.5px; line-height: 1.35; }
+      .tagline #subtitle { color: var(--ink-2); }
+
+      .tabs { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
+      .tab { appearance: none; border: 0; background: none; cursor: pointer; padding: 7px 14px; border-radius: 7px;
+        font-size: 13px; font-weight: 500; color: var(--ink-2); white-space: nowrap; }
+      .tab:hover { color: var(--ink); }
+      .tab.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px var(--line); }
+
+      /* ---------- toolbar ---------- */
+      .bar { background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(10px);
+        -webkit-backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+      .bar-in { max-width: 1680px; margin: 0 auto; padding: 12px 28px; display: flex; align-items: flex-end; gap: 14px 28px; flex-wrap: wrap; }
+      .group { display: flex; align-items: flex-end; gap: 12px; }
+      .group + .group { padding-left: 28px; border-left: 1px solid var(--line); }
+      .ctrl { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+      .lbl { font-size: 12px; font-weight: 500; color: var(--ink-3); letter-spacing: .01em; white-space: nowrap; }
+      .lbl b { color: var(--ink); font-weight: 600; }
+      .field { height: 34px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px;
+        padding: 0 10px; font-size: 13px; min-width: 0; }
+      select.field { padding-right: 28px; appearance: none; -webkit-appearance: none; cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 10px center; }
+      .field:hover { border-color: var(--ink-3); }
+      .field::placeholder { color: var(--ink-3); opacity: 1; }
+      .field.bad { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
+      input.field[type=number] { -moz-appearance: textfield; }
+      input.field::-webkit-outer-spin-button, input.field::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      .pair { display: flex; gap: 6px; align-items: center; }
+      .unit { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+      .w-xs { width: 58px; } .w-s { width: 76px; } .w-m { width: 96px; }
+
+      .range-row { display: flex; align-items: center; gap: 10px; height: 34px; }
+      input[type=range] { width: 150px; accent-color: var(--accent); margin: 0; }
+      .margin-val { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--ink);
+        min-width: 38px; text-align: right; }
+      #holdLabel { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+
+      .chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border: 1px solid var(--line-strong);
+        border-radius: 999px; background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ink-2); user-select: none; white-space: nowrap; }
+      .chip input { margin: 0; accent-color: var(--accent); }
+      .chip:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+      .chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      .filter-btn { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 8px;
+        border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 500; }
+      .filter-btn:hover { border-color: var(--ink-3); }
+      .filter-btn[aria-expanded=true] { background: var(--surface-2); }
+      .filter-btn svg { transition: transform .18s ease; }
+      .filter-btn[aria-expanded=true] svg { transform: rotate(180deg); }
+      .count { display: none; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 99px; background: var(--accent); color: var(--on-accent);
+        font-size: 11px; font-weight: 600; align-items: center; justify-content: center; }
+      .count.on { display: inline-flex; }
+      .only-m { display: none; }
+      @media (max-width: 720px) { .only-m { display: inline; } }
+      .push { margin-left: auto; }
+
+      .filters { border-top: 1px solid var(--line); }
+      .filters[hidden] { display: none; }
+      .filters-in { max-width: 1680px; margin: 0 auto; padding: 12px 28px 14px; display: flex; align-items: flex-end; gap: 14px 24px; flex-wrap: wrap; }
+      .linkbtn { background: none; border: 0; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; height: 34px; padding: 0 2px; }
+      .linkbtn:hover { text-decoration: underline; }
+
+      /* ---------- summary ---------- */
+      main { max-width: 1680px; margin: 0 auto; padding: 0 28px 48px; }
+      #calib:empty { display: none; }
+      .calib { margin-top: 18px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 14px;
+        background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px; color: var(--ink-2); }
+      .calib img { width: 64px; height: 44px; object-fit: cover; border-radius: 6px; background: var(--ph); flex: none; }
+      .calib b { color: var(--ink); font-weight: 600; }
+      .calib .figs { margin-left: auto; display: flex; gap: 22px; }
+      .calib .fig { display: flex; flex-direction: column; }
+      .calib .fig .n { font-weight: 600; font-size: 15px; color: var(--ink); }
+      .calib .fig .n.good { color: var(--good); }
+
+      .summary { display: flex; align-items: baseline; gap: 10px 28px; flex-wrap: wrap; padding: 20px 0 16px; }
+      .stats { display: flex; gap: 8px 28px; flex-wrap: wrap; align-items: baseline; color: var(--ink-2); font-size: 13.5px; }
+      .stats b { color: var(--ink); font-weight: 600; font-size: 20px; letter-spacing: -.01em; margin-right: 6px; font-variant-numeric: tabular-nums; }
+      .stats .deals b { color: var(--good); }
+      .legend { margin-left: auto; display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); align-items: center; }
+      .legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .lg-band { width: 18px; height: 6px; border-radius: 3px; background: var(--band); }
+      .lg-mkt { width: 2px; height: 12px; background: var(--ink); border-radius: 1px; }
+      .lg-buy { width: 0; height: 12px; border-left: 2px dashed var(--good); }
+      .lg-ask { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-2); box-shadow: 0 0 0 2px var(--surface); }
+
+      /* ---------- cards ---------- */
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+        display: flex; flex-direction: column; box-shadow: var(--shadow); transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+        content-visibility: auto; contain-intrinsic-size: auto 520px; }
+      .card:hover { box-shadow: var(--shadow-lift); border-color: var(--line-strong); }
+      .card.deal { border-color: var(--good-line); }
+      .ph { position: relative; aspect-ratio: 16 / 9; background: var(--ph); overflow: hidden; }
+      .ph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+      .ph .noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-size: 13px; font-weight: 500; letter-spacing: .02em; }
+      .ph .noimg svg { opacity: .55; }
+      .ribbon { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; }
+      .rb { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 4px 8px; border-radius: 6px; line-height: 1.2; }
+      .rb.deal { background: #146c43; color: #fff; }
+      .rb.new { background: #17181a; color: #fff; }
+
+      .cb { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+      .head { display: flex; align-items: flex-start; gap: 10px; }
+      .head > div { min-width: 0; flex: 1; }
+      .ttl { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .bare .ph { aspect-ratio: auto; background: none; }
+      .bare .ph .noimg { display: none; }
+      .bare .ribbon { position: static; padding: 14px 16px 0; }
+      .ttl .trim { color: var(--ink-2); font-weight: 500; }
+      .var { margin: 2px 0 0; color: var(--ink-3); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .conf { flex: none; font-size: 11px; font-weight: 600; padding: 3px 7px; border-radius: 6px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; margin-top: 1px; }
+      .conf.high { color: var(--good); background: var(--good-bg); }
+      .conf.low { color: var(--warn); background: var(--warn-bg); }
+      .meta { display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; color: var(--ink-2); }
+      .meta > div { display: flex; flex-wrap: wrap; }
+      .meta > div > span:not(:last-child)::after { content: "·"; margin: 0 7px; color: var(--ink-3); }
+      .meta .dim { color: var(--ink-3); }
+
+      .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+      .tags:empty { display: none; }
+      .tag { font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 6px; background: var(--surface-2); color: var(--ink-2); line-height: 1.5; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+      .tag.damage { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+      .tag.drop { background: var(--info-bg); color: var(--info); }
+      .tag.import { background: var(--warn-bg); color: var(--warn); }
+      .tag.source { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+      .pricing { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; align-items: baseline; padding-top: 12px; border-top: 1px solid var(--line); }
+      .pricing .lbl.r { text-align: right; }
+      .ask { font-size: 24px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
+      .mkt { text-align: right; font-size: 15px; font-weight: 500; color: var(--ink-2); white-space: nowrap; }
+      .delta { display: inline-block; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 2px 7px; border-radius: 5px; margin-left: 6px; }
+      .delta.under { color: var(--good); background: var(--good-bg); }
+      .delta.over { color: var(--bad); background: var(--bad-bg); }
+      .was { grid-column: 1 / -1; font-size: 12px; color: var(--info); margin-top: 2px; }
+
+      .meter { position: relative; height: 18px; margin: 2px 0 0; }
+      .meter .track { position: absolute; left: 0; right: 0; top: 8px; height: 2px; border-radius: 1px; background: var(--line); }
+      .meter .bandr { position: absolute; top: 5px; height: 8px; border-radius: 4px; background: var(--band); }
+      .meter .mk { position: absolute; top: 2px; width: 2px; height: 14px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+      .meter .buy { position: absolute; top: 2px; height: 14px; margin-left: -1px; border-left: 2px dashed var(--good); }
+      .meter .dot { position: absolute; top: 4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--ink-2); box-shadow: 0 0 0 2px var(--surface); }
+      .meter .dot.under { background: var(--good); }
+      .meter .dot.over { background: var(--bad); }
+      .range { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-3); margin-top: -4px; }
+
+      .foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
+      .foot .lbl { display: block; }
+      .target { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+      .target.ok { color: var(--good); }
+      .actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+      a.view { color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
+      a.view:hover { text-decoration: underline; }
+      .send { background: var(--accent); color: var(--on-accent); border: 1px solid var(--accent); border-radius: 8px; height: 34px;
+        padding: 0 13px; font-weight: 600; font-size: 13px; cursor: pointer; white-space: nowrap; }
+      .send:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+      .send:disabled { opacity: .6; cursor: progress; }
+      .send.secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+      .send.secondary:hover { background: var(--surface-2); }
+
+      .empty { grid-column: 1 / -1; padding: 72px 24px; text-align: center; color: var(--ink-2); border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+      .empty code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+      .more { grid-column: 1 / -1; text-align: center; color: var(--ink-3); font-size: 12.5px; padding: 8px; }
+
+      /* ---------- modal ---------- */
+      .overlay { position: fixed; inset: 0; background: rgba(10, 11, 13, .48); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+      .overlay.on { display: flex; animation: fade .14s ease-out; }
+      .overlay.on .modal { animation: rise .18s ease-out; }
+      @keyframes fade { from { opacity: 0; } }
+      @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
+      .modal { background: var(--surface); color: var(--ink); border-radius: 14px; width: min(620px, 100%); max-height: calc(100vh - 32px); overflow: auto; box-shadow: 0 24px 60px rgba(0,0,0,.25); border: 1px solid var(--line); }
+      .modal h3 { margin: 0; padding: 18px 22px; border-bottom: 1px solid var(--line); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+      .modal .content { padding: 18px 22px; display: flex; flex-direction: column; gap: 16px; }
+      .modal .row { display: flex; gap: 18px 28px; align-items: flex-end; flex-wrap: wrap; }
+      .modal .hint { font-size: 12.5px; color: var(--ink-3); padding-bottom: 8px; }
+      #mMarket { font-size: 20px; font-weight: 600; height: 38px; display: flex; align-items: center; }
+      .modal input[type=number] { height: 38px; font-weight: 600; font-size: 15px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; width: 150px; background: var(--surface); }
+      .modal textarea { font-size: 13px; width: 100%; min-height: 170px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; resize: vertical; background: var(--surface); line-height: 1.55; }
+      .modal .mfoot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 22px; border-top: 1px solid var(--line); align-items: center; flex-wrap: wrap; }
+      .modal .mfoot .spacer { flex: 1; }
+      .toggle { display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 13px; font-weight: 500; }
+      .toggle input { accent-color: var(--bad); margin: 0; }
+      .warnbox { background: var(--warn-bg); color: var(--warn); font-size: 12.5px; padding: 10px 12px; border-radius: 8px; line-height: 1.5; }
+      .warnbox code { font-family: var(--mono); font-size: 11.5px; }
+      .result { font-size: 12px; white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 200px; overflow: auto; font-family: var(--mono); }
+
+      /* ---------- responsive ---------- */
+      @media (max-width: 1100px) {
+        .group + .group { padding-left: 0; border-left: 0; }
+      }
+      @media (max-width: 720px) {
+        .top-in { padding: 12px 16px; gap: 12px; }
+        .brand { flex-basis: 100%; align-items: flex-start; }
+        .mark { margin-top: 2px; }
+        .tagline { font-size: 12px; }
+        .tabs { width: 100%; }
+        .tab { flex: 1; padding: 7px 6px; font-size: 12.5px; }
+        .bar { position: static; backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg); }
+        .bar-in { padding: 12px 16px; gap: 12px; }
+        .group { width: 100%; flex-wrap: wrap; gap: 10px 12px; }
+        .bar:not(.open) .calc { display: none; }
+        .calc { order: 5; padding-top: 12px; border-top: 1px solid var(--line); }
+        .filter-btn { width: 100%; justify-content: center; }
+        .tagline .sep { display: none; }
+        .tagline #subtitle { display: block; }
+        .stats { gap: 4px 20px; font-size: 13px; }
+        .stats b { font-size: 17px; }
+        .summary { padding: 16px 0 12px; }
+        .group .ctrl { flex: 1 1 140px; }
+        .group .ctrl .field { width: 100%; }
+        input[type=range] { flex: 1; width: auto; }
+        .range-row { width: 100%; }
+        .push { margin-left: 0; }
+        .filters-in { padding: 12px 16px 14px; gap: 12px; }
+        .filters-in .ctrl { flex: 1 1 140px; }
+        main { padding: 0 16px 40px; }
+        .legend { margin-left: 0; }
+        .grid { grid-template-columns: 1fr; gap: 14px; }
+        .calib .figs { margin-left: 0; }
+        .modal .mfoot { justify-content: flex-start; }
+        .modal .mfoot .spacer { flex-basis: 100%; height: 0; }
+        .modal .mfoot .send { flex: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="top-in">
+        <div class="brand">
+          <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="1" y="1" width="30" height="30" rx="8" fill="currentColor" />
+            <rect x="6" y="15.25" width="20" height="1.5" rx=".75" fill="var(--surface)" opacity=".4" />
+            <rect x="14" y="13" width="12" height="6" rx="3" fill="var(--surface)" opacity=".45" />
+            <rect x="19" y="9.5" width="2" height="13" rx="1" fill="var(--surface)" />
+            <circle cx="10" cy="16" r="3.25" fill="var(--surface)" />
+          </svg>
+          <div class="brand-text">
+            <div class="wordmark">Kurswert</div>
+            <div class="tagline">Marktbewertung gebrauchter Teslas auf mobile.de und AutoScout24<span class="sep"> · </span><span id="subtitle">lädt…</span></div>
+          </div>
+        </div>
+        <nav class="tabs" role="tablist" aria-label="Datenquelle">
+          <button type="button" class="tab active" role="tab" aria-selected="true" data-src="newest">Neue Angebote</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-src="valuations">Gesamtmarkt</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-src="dealer">Eigener Bestand</button>
+        </nav>
+      </div>
+    </header>
+
+    <div class="bar">
+      <div class="bar-in">
+        <div class="group calc" aria-label="Ankaufkalkulation">
+          <div class="ctrl">
+            <label class="lbl" for="margin">Zielmarge</label>
+            <div class="range-row">
+              <input type="range" id="margin" min="0" max="60" value="15" step="1" />
+              <span class="margin-val num" id="marginLabel">15%</span>
+            </div>
+          </div>
+          <div class="ctrl">
+            <label class="lbl" for="holdDays">Standkosten <span id="holdLabel"></span></label>
+            <div class="pair">
+              <input type="number" id="holdDays" class="field w-xs num" value="95" min="0" step="5" title="Erwartete Standtage (Bundesschnitt ~95)" aria-label="Standtage" />
+              <span class="unit">Tage ×</span>
+              <input type="number" id="holdCost" class="field w-xs num" value="10" min="0" step="1" title="Kosten pro Standtag (Kapital, Platz, Pflege)" aria-label="Kosten pro Tag in Euro" />
+              <span class="unit">€/Tag</span>
+            </div>
+          </div>
+        </div>
+        <div class="group" aria-label="Ansicht">
+          <div class="ctrl">
+            <label class="lbl" for="fModel">Modell</label>
+            <select id="fModel" class="field"><option value="">Alle Modelle</option></select>
+          </div>
+          <div class="ctrl">
+            <label class="lbl" for="fSort">Sortierung</label>
+            <select id="fSort" class="field">
+              <option value="delta">Beste Chance (unter Markt)</option>
+              <option value="recency">Neueste zuerst</option>
+              <option value="drops">Preissenkung zuerst</option>
+              <option value="market">Marktpreis (hoch→niedrig)</option>
+              <option value="asking">Angebotspreis (niedrig→hoch)</option>
+              <option value="dist">Entfernung (nah→fern)</option>
+            </select>
+          </div>
+        </div>
+        <div class="group">
+          <label class="chip"><input type="checkbox" id="fDeals" /> Nur Chancen</label>
+          <label class="chip"><input type="checkbox" id="fDe" /> Nur Deutschland</label>
+        </div>
+        <button type="button" class="filter-btn push" id="filterToggle" aria-expanded="false" aria-controls="filterPanel">
+          <span><span class="only-m">Kalkulation &amp; </span>Filter</span> <span class="count" id="filterCount"></span>
+          <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+        </button>
+      </div>
+      <div class="filters" id="filterPanel" hidden>
+        <div class="filters-in">
+          <div class="ctrl">
+            <label class="lbl" for="fZip">Standort</label>
+            <div class="pair">
+              <input type="text" id="fZip" class="field w-s num" placeholder="PLZ" maxlength="5" inputmode="numeric" autocomplete="postal-code" />
+              <select id="fRadius" class="field" aria-label="Umkreis">
+                <option value="">Überall</option>
+                <option value="25">25 km</option><option value="50">50 km</option><option value="100">100 km</option><option value="150">150 km</option>
+                <option value="200">200 km</option><option value="300">300 km</option><option value="500">500 km</option>
+              </select>
+            </div>
+          </div>
+          <div class="ctrl">
+            <label class="lbl" for="fRegFrom">Erstzulassung</label>
+            <div class="pair">
+              <select id="fRegFrom" class="field num"><option value="">von</option></select>
+              <span class="unit">–</span>
+              <select id="fRegTo" class="field num" aria-label="Erstzulassung bis"><option value="">bis</option></select>
+            </div>
+          </div>
+          <div class="ctrl">
+            <label class="lbl" for="fKmMax">Kilometer bis</label>
+            <input type="number" id="fKmMax" class="field w-m num" min="0" step="10000" placeholder="beliebig" />
+          </div>
+          <div class="ctrl">
+            <label class="lbl" for="fPriceMin">Preis (€)</label>
+            <div class="pair">
+              <input type="number" id="fPriceMin" class="field w-m num" min="0" step="1000" placeholder="von" />
+              <span class="unit">–</span>
+              <input type="number" id="fPriceMax" class="field w-m num" min="0" step="1000" placeholder="bis" aria-label="Preis bis" />
+            </div>
+          </div>
+          <button type="button" id="fReset" class="linkbtn">Filter zurücksetzen</button>
+        </div>
+      </div>
+    </div>
+
+    <main>
+      <div id="calib"></div>
+      <div class="summary">
+        <div class="stats" id="stats" aria-live="polite"></div>
+        <div class="legend" aria-hidden="true">
+          <span><i class="lg-band"></i>Marktspanne</span>
+          <span><i class="lg-mkt"></i>Marktwert</span>
+          <span><i class="lg-ask"></i>Angebot</span>
+          <span><i class="lg-buy"></i>Max. Ankauf</span>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </main>
+
+    <div class="overlay" id="overlay">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+        <h3 id="mTitle">Ankaufangebot senden</h3>
+        <div class="content">
+          <div class="row">
+            <div class="ctrl"><span class="lbl">Marktwert</span><div class="num" id="mMarket"></div></div>
+            <div class="ctrl"><label class="lbl" for="mOffer">Angebot (EUR)</label><input type="number" id="mOffer" class="num" step="100" /></div>
+            <div class="hint">Vorschlag = Marktpreis ÷ (1 + Marge) − Standkosten</div>
+          </div>
+          <div class="ctrl">
+            <label class="lbl" for="mMsg">Nachricht</label>
+            <textarea id="mMsg"></textarea>
+          </div>
+          <div class="warnbox" id="mWarn">Vorschau (Dry-Run): das Formular wird nur ausgefüllt, nicht gesendet. Zum echten Versand unten „Wirklich senden“ aktivieren. Erfordert einmaligen mobile.de-Login (<code>LOGIN=1 node pricing/send_offer.js</code>).</div>
+          <div class="result" id="mResult" style="display:none"></div>
+        </div>
+        <div class="mfoot">
+          <label class="toggle"><input type="checkbox" id="mReal" /> Wirklich senden</label>
+          <div class="spacer"></div>
+          <button type="button" class="send secondary" id="mCancel">Abbrechen</button>
+          <button type="button" class="send" id="mSend">Vorschau erstellen</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const state = { src: 'newest', margin: 0.15, holdDays: 95, holdCost: 10, data: {}, tmpl: null, active: null, calib: null };
+      const euro = (n) => n == null ? '–' : '€' + Math.round(n).toLocaleString('de-DE');
+      const km = (n) => n == null ? '–' : n.toLocaleString('de-DE') + ' km';
+      const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      const esc = (s) => s == null ? '' : String(s).replace(/[&<>"']/g, (c) => ESC[c]);
+      const pct = (n) => n.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+
+      async function load(src) {
+        if (state.data[src]) return state.data[src];
+        const file = { newest: 'newest.json', valuations: 'valuations.json', dealer: 'dealer.json' }[src];
+        try {
+          const r = await fetch(file);
+          if (!r.ok) throw 0;
+          state.data[src] = (await r.json()).listings;
+        } catch { state.data[src] = []; }
+        return state.data[src];
+      }
+
+      // Deal = asking at or below the max buy price for the target margin, and the
+      // valuation is in-range. Recomputed here so the slider needs no round-trip.
+      function withDeal(l) {
+        // buy target = market/(1+margin) minus the cost of the car standing on
+        // the lot until resale (Standtage × €/Tag), the standard dealer formula
+        const holding = Math.round(state.holdDays * state.holdCost);
+        const maxBuy = Math.max(0, Math.round(l.marketPrice / (1 + state.margin)) - holding);
+        // a genuine buy is below the target, in the model's range, and not flagged
+        // for accident/defect/salvage by the AI labeling pass, and its listing
+        // data is self-consistent (a title-corrected car needs a human check first)
+        return { ...l, maxBuy, holding, isDealNow: l.asking != null && l.asking <= maxBuy && !l.extrapolated && !l.flagged && !l.corrections?.length && !l.implausiblePrice };
+      }
+      const fmtDelta = (d) => d == null ? '' : `<span class="delta ${d <= 0 ? 'under' : 'over'}">${d > 0 ? '+' : d < 0 ? '−' : ''}${pct(Math.abs(d))}%</span>`;
+
+      const CONDITION_LABEL = {
+        repaired_damage: 'Unfall (repariert)', accident_unrepaired: 'Unfallschaden',
+        not_roadworthy: 'nicht fahrbereit', salvage: 'Bastler/Export',
+      };
+      const CONF_LABEL = { high: 'Sicher', medium: 'Mittel', low: 'Unsicher' };
+      const displayTitle = (l) => String(l.title || l.model || '').replace(/^Tesla\s+/i, '');
+
+      // status markers on the photo: only the two that drive action
+      function ribbon(l) {
+        let r = '';
+        if (l.isDealNow) r += '<span class="rb deal">Chance</span>';
+        if (l.isNewToday) r += '<span class="rb new">Neu</span>';
+        return r ? `<div class="ribbon">${r}</div>` : '';
+      }
+      // everything else is context, shown as quiet tags under the specs
+      function tags(l) {
+        const b = [];
+        // damage / defect flags from the AI labeling pass take visual priority
+        if (l.flagged) {
+          const label = l.condition && CONDITION_LABEL[l.condition]
+            ? CONDITION_LABEL[l.condition]
+            : (l.caveats && l.caveats[0]) || 'Mangel';
+          b.push(`<span class="tag damage" title="${esc((l.caveats || []).join(', '))}">${esc(label)}</span>`);
+        }
+        // seller cut the price = motivated seller; the classic outreach trigger
+        if (l.priceDrop) b.push(`<span class="tag drop">Preis ↓ ${Math.abs(l.priceDrop.totalDropPct)}%${l.priceDrop.drops > 1 ? ` (${l.priceDrop.drops}×)` : ''}</span>`);
+        if (l.isImport) b.push(`<span class="tag import">Import ${esc(l.country)}</span>`);
+        if (l.implausiblePrice) b.push('<span class="tag damage" title="Mehr als 30% unter Markt: so weit liegt kein geprüftes, unfallfreies Inserat darunter. Vermutlich Schaden, Betrug oder Datenfehler">Preis unplausibel</span>');
+        if (l.extrapolated) b.push('<span class="tag" title="Fahrzeug liegt außerhalb der Trainingsdaten, Bewertung extrapoliert">außerh. Datenbasis</span>');
+        // the seller's title contradicted a field and the model used the title
+        const CORRECTION_LABEL = { baujahr: `Baujahr laut Titel (EZ ${esc(l.firstReg)})`, leistung: `Leistung laut Titel (${l.powerKw} kW)` };
+        for (const c of l.corrections || []) b.push(`<span class="tag" title="Inserat widersprüchlich, Titel verwendet">${CORRECTION_LABEL[c] || esc(c)}</span>`);
+        if (l.source === 'autoscout24') b.push('<span class="tag source">AutoScout24</span>');
+        return b.join('');
+      }
+
+      // asking vs market band on one scale: the "how good is it" at a glance
+      function meter(l, asking) {
+        if (l.marketPrice == null || l.low == null || l.high == null) return '';
+        const pts = [l.low, l.high, l.marketPrice];
+        if (asking != null) pts.push(asking);
+        if (l.maxBuy > 0) pts.push(l.maxBuy);
+        let lo = Math.min(...pts), hi = Math.max(...pts);
+        const pad = (hi - lo) * 0.08 || 500; lo -= pad; hi += pad;
+        const x = (v) => (((v - lo) / (hi - lo)) * 100).toFixed(2) + '%';
+        const dir = asking == null ? '' : asking <= l.marketPrice ? 'under' : 'over';
+        return `<div class="meter" role="img" aria-label="Angebot ${euro(asking)}, Markt ${euro(l.marketPrice)}, Spanne ${euro(l.low)} bis ${euro(l.high)}">
+            <div class="track"></div>
+            <div class="bandr" style="left:${x(l.low)};width:calc(${x(l.high)} - ${x(l.low)})"></div>
+            ${l.maxBuy > 0 ? `<div class="buy" style="left:${x(l.maxBuy)}" title="Max. Ankauf ${euro(l.maxBuy)}"></div>` : ''}
+            <div class="mk" style="left:${x(l.marketPrice)}" title="Marktwert ${euro(l.marketPrice)}"></div>
+            ${asking != null ? `<div class="dot ${dir}" style="left:${x(asking)}" title="Angebot ${euro(asking)}"></div>` : ''}
+          </div>`;
+      }
+
+      const PH = `<div class="noimg"><svg width="56" height="24" viewBox="0 0 56 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 17v-3.5c0-1 .7-1.9 1.7-2.1L15 9l7-5h14l9 6 7 1.5c1 .2 1.5 1 1.5 2V17"/><circle cx="14" cy="18" r="3.5"/><circle cx="42" cy="18" r="3.5"/><path d="M17.5 18h21"/></svg></div>`;
+
+      function card(l) {
+        const asking = l.asking != null ? l.asking : l.price;
+        const img = l.image ? `<img src="${esc(l.image)}" alt="" loading="lazy" decoding="async" onerror="this.remove()" />` : '';
+        // computed client-side so the number is current even when the last
+        // train run is days old
+        const dom = l.firstSeen ? Math.max(0, Math.round((Date.now() - new Date(l.firstSeen)) / 86400000)) : null;
+        const place = l.city || l.country || '';
+        const dist = l.dist != null ? ` (${Math.round(l.dist)} km)` : '';
+        const line = (parts) => { const p = parts.filter(Boolean); return p.length ? `<div>${p.map((s) => `<span>${s}</span>`).join('')}</div>` : ''; };
+        const meta = line([l.year || '–', km(l.mileageKm ?? l.km), l.powerKw ? l.powerKw + ' kW' : '']) +
+          line([place ? esc(place) + dist : '', dom != null ? `<span class="dim">seit ≥${dom} Tg. beobachtet</span>` : '']);
+        const region = l.regionPct ? `<span title="Regionale Preisanpassung (PLZ-Zone)">Region ${l.regionPct > 0 ? '+' : '−'}${Math.abs(l.regionPct)}%</span>` : '';
+        const dropLine = l.priceDrop ? `<div class="was num">vorher ${euro(l.priceDrop.firstPrice)} · zuletzt gesenkt ${esc(l.priceDrop.lastDropDate)}</div>` : '';
+        const trim = l.trim && !displayTitle(l).toLowerCase().includes(l.trim.toLowerCase()) ? ` <span class="trim">${esc(l.trim)}</span>` : '';
+        const variant = l.variant && l.variant.trim() !== (l.trim || '') ? esc(l.variant) : '';
+        return `<article class="card ${l.isDealNow ? 'deal' : ''}">
+          <div class="ph">${PH}${img}${ribbon(l)}</div>
+          <div class="cb">
+            <div class="head">
+              <div>
+                <h3 class="ttl">${esc(displayTitle(l))}${trim}</h3>
+                ${variant ? `<p class="var">${variant}</p>` : ''}
+              </div>
+              <span class="conf ${esc(l.confidence)}" title="Bewertungssicherheit">${CONF_LABEL[l.confidence] || esc(l.confidence)}</span>
+            </div>
+            <div class="meta num">${meta}</div>
+            <div class="tags">${tags(l)}</div>
+            <div class="pricing">
+              <span class="lbl">Angebot</span><span class="lbl r">Marktwert</span>
+              <div class="ask num">${euro(asking)}</div>
+              <div class="mkt num">${euro(l.marketPrice)}${fmtDelta(l.deltaPct)}</div>
+              ${dropLine}
+            </div>
+            <div>
+              ${meter(l, asking)}
+              <div class="range num"><span>${euro(l.low)} – ${euro(l.high)}</span>${region}</div>
+            </div>
+            <div class="foot">
+              <div>
+                <span class="lbl" title="Marktpreis ÷ (1+Marge) − Standkosten">Max. Ankauf · ${(state.margin*100)|0}%${l.holding ? ` − ${euro(l.holding)}` : ''}</span>
+                <div class="target ${l.isDealNow ? 'ok' : ''} num">${euro(l.maxBuy)}</div>
+              </div>
+              <div class="actions">
+                ${l.source === 'autoscout24' ? '' : `<button type="button" class="send" data-id="${esc(l.id)}">Angebot senden</button>`}
+                <a class="view" href="${esc(l.url)}" target="_blank" rel="noopener">Inserat ansehen ↗</a>
+              </div>
+            </div>
+          </div>
+        </article>`;
+      }
+
+      // ---- location / registration / mileage / price filters ----
+      // PLZ -> [lat, lon] from GeoNames (CC-BY 4.0), built into geo/plz.json.
+      // Only German listings have a geocodable PLZ, so a radius search drops imports.
+      const FILTER_IDS = ['fZip', 'fRadius', 'fRegFrom', 'fRegTo', 'fKmMax', 'fPriceMin', 'fPriceMax'];
+      const val = (id) => document.getElementById(id).value.trim();
+      const num = (id) => (val(id) === '' ? null : Number(val(id)));
+      function distanceKm([lat1, lon1], [lat2, lon2]) {
+        const rad = Math.PI / 180;
+        const a = Math.sin(((lat2 - lat1) * rad) / 2) ** 2 +
+          Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(((lon2 - lon1) * rad) / 2) ** 2;
+        return 12742 * Math.asin(Math.sqrt(a));
+      }
+      const regYear = (l) => Number(l.year || (l.firstReg || '').slice(-4)) || null;
+
+      function applyFilters(list) {
+        const zip = val('fZip');
+        const origin = /^\d{5}$/.test(zip) ? state.plz?.[zip] : null;
+        document.getElementById('fZip').classList.toggle('bad', zip.length === 5 && state.plz && !origin);
+        list = list.map((l) => {
+          const here = origin && !l.isImport && state.plz?.[l.zip];
+          return { ...l, dist: here ? distanceKm(origin, here) : null };
+        });
+        const radius = num('fRadius');
+        if (origin && radius) list = list.filter((l) => l.dist != null && l.dist <= radius);
+        const from = num('fRegFrom'), to = num('fRegTo');
+        if (from) list = list.filter((l) => regYear(l) >= from);
+        if (to) list = list.filter((l) => regYear(l) != null && regYear(l) <= to);
+        const kmMax = num('fKmMax');
+        if (kmMax != null) list = list.filter((l) => (l.mileageKm ?? l.km) <= kmMax);
+        const pMin = num('fPriceMin'), pMax = num('fPriceMax');
+        if (pMin != null) list = list.filter((l) => (l.asking ?? l.price) >= pMin);
+        if (pMax != null) list = list.filter((l) => (l.asking ?? l.price) <= pMax);
+        return list;
+      }
+
+      // remember filters per viewer; storage can be unavailable, so never depend on it
+      function saveFilters() {
+        try { localStorage.setItem('filters', JSON.stringify(Object.fromEntries(FILTER_IDS.map((id) => [id, val(id)])))); } catch {}
+      }
+      function restoreFilters() {
+        try {
+          const saved = JSON.parse(localStorage.getItem('filters') || '{}');
+          for (const id of FILTER_IDS) if (saved[id] != null) document.getElementById(id).value = saved[id];
+        } catch {}
+      }
+      const activeFilterCount = () => FILTER_IDS.filter((id) => val(id) !== '').length;
+      function setFilterPanel(open, persist = true) {
+        $('filterPanel').hidden = !open;
+        $('filterToggle').setAttribute('aria-expanded', String(open));
+        document.querySelector('.bar').classList.toggle('open', open);
+        if (persist) try { localStorage.setItem('filtersOpen', open ? '1' : '0'); } catch {}
+      }
+
+      async function render() {
+        const raw = await load(state.src);
+        let list = raw.map(withDeal);
+        const m = document.getElementById('fModel').value;
+        if (m) list = list.filter((l) => l.model === m);
+        if (document.getElementById('fDeals').checked) list = list.filter((l) => l.isDealNow);
+        if (document.getElementById('fDe').checked) list = list.filter((l) => !l.isImport);
+        list = applyFilters(list);
+        const sort = document.getElementById('fSort').value;
+        list.sort((a, b) =>
+          sort === 'market' ? b.marketPrice - a.marketPrice :
+          sort === 'asking' ? (a.asking ?? a.price) - (b.asking ?? b.price) :
+          sort === 'recency' ? (a.listedRank ?? 1e9) - (b.listedRank ?? 1e9) :
+          sort === 'drops' ? (a.priceDrop?.totalDropPct ?? 1) - (b.priceDrop?.totalDropPct ?? 1) :
+          sort === 'dist' ? (a.dist ?? 1e9) - (b.dist ?? 1e9) :
+          a.deltaPct - b.deltaPct);
+        state.active = Object.fromEntries(list.map((l) => [l.id, l]));
+
+        const n = activeFilterCount();
+        $('filterCount').textContent = n;
+        $('filterCount').classList.toggle('on', n > 0);
+
+        const deals = list.filter((l) => l.isDealNow).length;
+        const drops = list.filter((l) => l.priceDrop).length;
+        const fmt = (x) => x.toLocaleString('de-DE');
+        const srcLabel = { newest: 'neue Angebote', valuations: 'Marktinserate', dealer: 'eigene Fahrzeuge' }[state.src];
+        document.getElementById('stats').innerHTML =
+          `<span><b>${fmt(list.length)}</b>${srcLabel}</span>` +
+          `<span class="deals"><b>${fmt(deals)}</b>Ankaufchancen bei ${(state.margin*100)|0}% Marge</span>` +
+          (drops ? `<span><b>${fmt(drops)}</b>mit Preissenkung</span>` : '');
+        const LIMIT = 400;
+        // a feed without photos (e.g. own stock) drops the photo slot instead of showing empty placeholders
+        document.getElementById('grid').classList.toggle('bare', list.length > 0 && !list.some((l) => l.image));
+        document.getElementById('grid').innerHTML = list.length
+          ? list.slice(0, LIMIT).map(card).join('') +
+            (list.length > LIMIT ? `<div class="more">Die ersten ${LIMIT} von ${fmt(list.length)} Fahrzeugen. Filter eingrenzen, um weitere zu sehen.</div>` : '')
+          : `<div class="empty">Keine Fahrzeuge für diese Auswahl.<br /><small>Für „Neue Angebote“ zuerst <code>node pricing/value_newest.js</code> ausführen, für „Eigener Bestand“ <code>node pricing/scrape_dealer.js</code>.</small></div>`;
+      }
+
+      // ---- offer modal ----
+      const $ = (id) => document.getElementById(id);
+      function closeOffer() { $('overlay').classList.remove('on'); state.lastFocus?.focus?.(); }
+      function openOffer(id) {
+        const l = state.active[id];
+        if (!l) return;
+        state.offerFor = l;
+        state.lastFocus = document.activeElement;
+        // suggest the actual buy target incl. holding cost, same as the card
+        const offer = l.maxBuy ?? Math.round(l.marketPrice / (1 + state.margin));
+        $('mTitle').textContent = `Ankaufangebot: ${displayTitle(l)} ${l.variant || l.trim || ''}`.trim();
+        $('mMarket').textContent = euro(l.marketPrice);
+        $('mOffer').value = offer;
+        $('mMsg').value = buildMsg(l, offer);
+        $('mResult').style.display = 'none';
+        $('mReal').checked = false;
+        $('mSend').textContent = 'Vorschau erstellen';
+        $('overlay').classList.add('on');
+        $('mOffer').focus();
+      }
+      function buildMsg(l, offer) {
+        return `Sehr geehrte Damen und Herren,\n\nwir interessieren uns für Ihren ${l.title || l.model} ${l.variant || l.trim || ''} (EZ ${l.year || ''}, ${km(l.mileageKm ?? l.km)}).\n\nAuf Basis der aktuellen Marktlage bieten wir Ihnen ${offer.toLocaleString('de-DE')} EUR. Kostenlose Abholung vor Ort, sofortige Bezahlung.\n\nMit freundlichen Grüßen`;
+      }
+      $('mOffer').addEventListener('input', () => {
+        const l = state.offerFor;
+        if (l) $('mMsg').value = buildMsg(l, +$('mOffer').value || 0);
+      });
+      $('mReal').addEventListener('change', () => {
+        $('mSend').textContent = $('mReal').checked ? 'Jetzt senden' : 'Vorschau erstellen';
+      });
+      $('mCancel').addEventListener('click', closeOffer);
+      $('overlay').addEventListener('click', (e) => { if (e.target === $('overlay')) closeOffer(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('overlay').classList.contains('on')) closeOffer(); });
+      $('mSend').addEventListener('click', async () => {
+        const l = state.offerFor;
+        const send = $('mReal').checked;
+        if (!(+$('mOffer').value > 0)) {
+          $('mResult').style.display = 'block';
+          $('mResult').textContent = 'Angebot ≤ €0 (Standkosten übersteigen den Ankaufwert). Bitte realistischen Preis eintragen.';
+          return;
+        }
+        $('mSend').disabled = true;
+        $('mResult').style.display = 'block';
+        $('mResult').textContent = send ? 'Sende…' : 'Öffne mobile.de und fülle das Formular…';
+        try {
+          const r = await fetch('/api/send-offer', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: l.id, offer: +$('mOffer').value, send }),
+          });
+          const j = await r.json();
+          $('mResult').textContent = (j.dryRun ? '[DRY-RUN, nichts gesendet]\n\n' : '[GESENDET]\n\n') + (j.output || '');
+        } catch (e) {
+          $('mResult').textContent = 'Fehler: ' + e.message + '\n(Server läuft? node web/serve.js)';
+        }
+        $('mSend').disabled = false;
+      });
+
+      document.getElementById('grid').addEventListener('click', (e) => {
+        const btn = e.target.closest('.send[data-id]');
+        if (btn) openOffer(btn.dataset.id);
+      });
+      $('margin').addEventListener('input', (e) => {
+        state.margin = +e.target.value / 100;
+        $('marginLabel').textContent = e.target.value + '%';
+        render();
+      });
+      function holdChanged(doRender = true) {
+        state.holdDays = Math.max(0, +$('holdDays').value || 0);
+        state.holdCost = Math.max(0, +$('holdCost').value || 0);
+        const h = Math.round(state.holdDays * state.holdCost);
+        $('holdLabel').textContent = h ? '−' + euro(h) : '';
+        if (doRender) render();
+      }
+      $('holdDays').addEventListener('input', () => holdChanged());
+      $('holdCost').addEventListener('input', () => holdChanged());
+      holdChanged(false); // label only; the boot loader below does the first render
+      for (const id of ['fModel', 'fSort', 'fDeals', 'fDe'])
+        $(id).addEventListener('change', render);
+      for (const id of FILTER_IDS)
+        $(id).addEventListener($(id).tagName === 'SELECT' ? 'change' : 'input', () => { saveFilters(); render(); });
+      $('fZip').addEventListener('change', () => {
+        // entering a location makes distance the natural order
+        if (/^\d{5}$/.test(val('fZip'))) { $('fSort').value = 'dist'; render(); }
+      });
+      $('fReset').addEventListener('click', () => {
+        for (const id of FILTER_IDS) $(id).value = '';
+        saveFilters();
+        render();
+      });
+      $('filterToggle').addEventListener('click', () => setFilterPanel($('filterPanel').hidden));
+      document.querySelectorAll('.tab').forEach((t) =>
+        t.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach((x) => { x.classList.remove('active'); x.setAttribute('aria-selected', 'false'); });
+          t.classList.add('active');
+          t.setAttribute('aria-selected', 'true');
+          state.src = t.dataset.src;
+          document.getElementById('fSort').value = t.dataset.src === 'newest' ? 'recency' : 'delta';
+          render();
+        }));
+
+      // a reference offer (pricing/calibration.json) sets the default margin
+      function renderCalib() {
+        const c = state.calib;
+        if (!c) return;
+        const car = c.car;
+        $('calib').innerHTML = `<div class="calib">
+          ${car.image ? `<img src="${esc(car.image)}" alt="" loading="lazy" />` : ''}
+          <div>Zielmarge kalibriert an einem Referenzankauf: <b>${esc(car.title)}</b> ${esc(car.variant || '')} · ${esc(car.year)} · ${km(car.mileageKm)}.
+            Angebot ${euro(c.offer)} = ${c.offerPctOfMarket}% des Marktwerts.</div>
+          <div class="figs num">
+            <div class="fig"><span class="lbl">Marktwert</span><span class="n">${euro(car.marketPrice)}</span></div>
+            <div class="fig"><span class="lbl">Referenzangebot</span><span class="n">${euro(c.offer)}</span></div>
+            <div class="fig"><span class="lbl">Abgeleitete Marge</span><span class="n good">${c.impliedMarginPct}%</span></div>
+          </div>
+        </div>`;
+      }
+
+      (async () => {
+        const [vRes, plz] = await Promise.all([
+          fetch('valuations.json').then((r) => r.json()).catch(() => ({ listings: [] })),
+          fetch('geo/plz.json').then((r) => r.json()).catch(() => null),
+          load('newest'),
+        ]);
+        state.plz = plz;
+        state.data.valuations = vRes.listings;
+        state.calib = vRes.calibration || null;
+        // default the margin to the real implied margin of the reference offer
+        if (state.calib) {
+          state.margin = state.calib.impliedMarginPct / 100;
+          $('margin').value = state.calib.impliedMarginPct;
+          $('marginLabel').textContent = state.calib.impliedMarginPct + '%';
+          // the implied margin was derived from a real offer, so it already
+          // covers holding cost; defaulting Standkosten on top would double-count
+          // them and the benchmark car would miss its own offer
+          $('holdDays').value = 0;
+          holdChanged(false);
+          renderCalib();
+        }
+        const all = state.data.valuations;
+        const models = [...new Set(all.map((l) => l.model))].sort();
+        for (const mm of models) { const o = document.createElement('option'); o.value = o.textContent = mm; $('fModel').appendChild(o); }
+        const years = [...new Set(all.map(regYear).filter(Boolean))].sort((a, b) => b - a);
+        for (const sel of ['fRegFrom', 'fRegTo'])
+          for (const y of years) { const o = document.createElement('option'); o.value = o.textContent = y; $(sel).appendChild(o); }
+        restoreFilters();
+        let open = null;
+        try { open = localStorage.getItem('filtersOpen'); } catch {}
+        setFilterPanel(open === '1' || (open == null && activeFilterCount() > 0), false);
+        $('subtitle').textContent = `${all.length.toLocaleString('de-DE')} Inserate · Referenz: deutscher Wiederverkaufswert`;
+        $('fSort').value = 'recency';
+        render();
+      })();
+    </script>
+  </body>
+</html>

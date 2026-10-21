@@ -1,0 +1,1 @@
+const { makeRidge, C, combine } = require('../ridgeModel'); module.exports = makeRidge({ cols: combine(C.base, C.trim6, C.gen, C.batt, C.opts, (x) => ({ owners: x.owners == null ? 1 : x.owners, ownersMissing: +(x.owners == null) })) });

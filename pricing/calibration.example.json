@@ -1,0 +1,5 @@
+{
+  "benchmarkId": "<mobile.de listing id the dealer made an offer on>",
+  "dealerOffer": 15600,
+  "note": "Copy to calibration.json (gitignored). train.js values this listing and derives the dealer's implied margin = (market - offer) / offer, which becomes the dashboard's default margin."
+}

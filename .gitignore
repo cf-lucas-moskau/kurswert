@@ -1,0 +1,18 @@
+node_modules/
+profiles/
+data/
+web/valuations.json
+web/newest.json
+web/dealer.json
+pricing/model.json
+pricing/dealer.config.json
+offer-*.png
+fail-*.png
+*.log
+profiles-as24/
+pricing/lab/snapshot/
+# local-only: a real dealer's calibration offer, their logo, private notes, tool caches
+pricing/calibration.json
+web/logo.png
+VISION.*
+.impeccable/

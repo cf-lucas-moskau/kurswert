@@ -1,0 +1,497 @@
+--- a/pricing/engine.js
++++ b/pricing/engine.js
+@@ -17,11 +17,23 @@
+ // plain Node and is trivial to test.
+ 
+ const { featurize, REFERENCE_DATE } = require('./features');
++const { gbmFit, gbmPredict } = require('./gbm');
+ 
+ const MIN_SAMPLES_PER_MODEL = 40; // below this, fall back to the pooled global model
+ const RIDGE_LAMBDA = 1.0; // regularization on scaled predictors (not the intercept)
+ const OUTLIER_SIGMA = 2.5; // drop listings this far from the fit (in log space) then refit
+ const REGION_SHRINK_K = 15; // empirical-Bayes shrinkage: a zone's adjustment gets weight n/(n+K)
++// Comparable-listings correction: the regression's residuals on the K most
++// similar training cars (same model) shift the estimate, shrunk by K/(K+COMPS_SHRINK)
++const COMPS_K = 15;
++const COMPS_SHRINK = 10;
++const COMPS_CLIP = 0.15; // one mispriced comp can move the estimate at most this much (log)
++// Final estimate blends the regression(+comps) with a boosted-tree model in log
++// space. The trees catch non-linear trim×age effects the regression can't (most
++// visible on Model S/X); the regression keeps it stable and extrapolating sanely.
++const TREE_WEIGHT = 0.3;
++const TREE_OPTS = { nTrees: 400, lr: 0.05, depth: 4, minLeaf: 8, huberDelta: 0.08 };
++const TREE_MODELS = ['Model 3', 'Model Y', 'Model S', 'Model X'];
+ 
+ // ---- linear algebra -------------------------------------------------------
+ 
+@@ -71,9 +83,20 @@
+   // age² and mileage² capture the convex depreciation curve: value drops
+   // steeply at first, and again very steeply at extreme mileage. Without the
+   // squared mileage term the model over-values 200k+ km cars.
+-  return [f.ageYears, f.ageYears * f.ageYears, km, km * km, f.powerKw / 100];
++  // battery and owner count are imputed when unknown; a separate missing flag
++  // (in the binary block) carries the "not stated" effect
++  return [f.ageYears, f.ageYears * f.ageYears, km, km * km, f.powerKw / 100,
++    (f.batteryKwh || 0) / 100, f.owners == null ? 1 : f.owners];
+ }
+ 
++// 0/1 predictors shared by the per-model and global rows
++function binaryRaw(f) {
++  return [f.awd, f.performance, f.plaid, f.longRange, f.srPlus || 0, f.srBase || 0,
++    f.highland || 0, f.juniper || 0, f.refresh || 0, f.batteryKwh == null ? 1 : 0,
++    f.freeSupercharging || 0, f.fsd || 0, f.sevenSeats || 0, f.privateSeller || 0,
++    f.owners == null ? 1 : 0, f.huNew || 0];
++}
++
+ function makeScaler(rows) {
+   const raw = rows.map(continuousRaw);
+   const k = raw[0].length;
+@@ -81,6 +104,7 @@
+   const sd = new Array(k).fill(0);
+   for (const r of raw) for (let i = 0; i < k; i++) mean[i] += r[i] / raw.length;
+   for (const r of raw) for (let i = 0; i < k; i++) sd[i] += (r[i] - mean[i]) ** 2 / raw.length;
++  // a column that is constant here (e.g. no owner counts) stays unscaled
+   for (let i = 0; i < k; i++) sd[i] = Math.sqrt(sd[i]) || 1;
+   return { mean, sd };
+ }
+@@ -89,17 +113,33 @@
+   return continuousRaw(f).map((v, i) => (v - scaler.mean[i]) / scaler.sd[i]);
+ }
+ 
+-// per-model design row: [1, age, age², mileage, mileage², power, awd, perf, plaid, longRange]
++// per-model design row: [1, ...continuous, ...binary flags]
+ function rowFeatures(f, scaler) {
+-  return [1, ...scaledContinuous(f, scaler), f.awd, f.performance, f.plaid, f.longRange];
++  return [1, ...scaledContinuous(f, scaler), ...binaryRaw(f)];
+ }
+ 
+-// global design row: [1, <model dummies>, ...continuous, awd, perf, plaid, longRange]
++// global design row: [1, <model dummies>, ...continuous, ...binary flags]
+ function globalRowFeatures(f, scaler, modelList) {
+   const dummies = modelList.slice(1).map((m) => (f.model === m ? 1 : 0)); // first model is the base level
+-  return [1, ...dummies, ...scaledContinuous(f, scaler), f.awd, f.performance, f.plaid, f.longRange];
++  return [1, ...dummies, ...scaledContinuous(f, scaler), ...binaryRaw(f)];
+ }
+ 
++// boosted-tree input row (pooled over the four main models)
++const TREE_MONOTONE = { 4: -1, 5: -1 }; // age, km: never more valuable when older / higher mileage
++function treeRow(f) {
++  return [+(f.model === 'Model 3'), +(f.model === 'Model Y'), +(f.model === 'Model S'), +(f.model === 'Model X'),
++    f.ageYears, f.mileageKm / 100000, f.powerKw / 100,
++    f.awd, f.performance, f.plaid, f.longRange, f.srPlus || 0, f.srBase || 0,
++    f.highland || 0, f.juniper || 0, f.refresh || 0, f.batteryKwh == null ? -1 : f.batteryKwh,
++    f.freeSupercharging || 0, f.fsd || 0, f.sevenSeats || 0,
++    f.privateSeller || 0, f.owners == null ? -1 : f.owners, f.huNew || 0];
++}
++
++// comparable-listing coordinates: scaled so 2 years ≈ 50,000 km ≈ 50 kW ≈ 1 unit
++function compVec(f) {
++  return [f.ageYears / 2, f.mileageKm / 50000, f.powerKw / 50, (f.batteryKwh || 0) / 10 * 0.5, f.performance, f.longRange * 0.5];
++}
++
+ // ---- fitting --------------------------------------------------------------
+ 
+ // floor the age so near-new cars with delivery mileage don't divide by ~0
+@@ -197,9 +237,50 @@
+     regionAdj[zone] = med * (rs.length / (rs.length + REGION_SHRINK_K));
+   }
+   model.regionAdj = regionAdj;
++
++  // comps table: each training car's coordinates + its regression residual
++  // (after the region adjustment), per model with a per-model fit
++  const comps = {};
++  for (const r of usable) {
++    if (!perModel[r.model]) continue;
++    const resid = Math.log(r.price) - baseLogPred(model, r) - ((r.plzZone && regionAdj[r.plzZone]) || 0);
++    (comps[r.model] = comps[r.model] || []).push([...compVec(r).map((v) => +v.toFixed(4)), +resid.toFixed(4)]);
++  }
++  model.comps = comps;
++
++  // boosted trees on the four main models (Huber loss, monotone in age/km)
++  const treeRows = usable.filter((r) => TREE_MODELS.includes(r.model));
++  if (treeRows.length >= 100) {
++    const X = treeRows.map(treeRow);
++    const y = treeRows.map((r) => Math.log(r.price));
++    const { model: trees, trainPred } = gbmFit(X, y, {
++      ...TREE_OPTS,
++      monotone: X[0].map((_, j) => TREE_MONOTONE[j] || 0),
++    });
++    // per-model residual sigma of the trees, for the blended confidence band
++    const sigma = {};
++    for (const m of TREE_MODELS) {
++      const rs = treeRows.map((r, i) => (r.model === m ? y[i] - trainPred[i] : null)).filter((v) => v != null);
++      if (rs.length) sigma[m] = Math.sqrt(rs.reduce((s, v) => s + v * v, 0) / rs.length);
++    }
++    model.trees = { ...trees, sigma };
++  }
+   return model;
+ }
+ 
++// mean clipped residual of the K nearest same-model comps, shrunk toward 0
++function compsAdj(model, f) {
++  const table = model.comps?.[f.model];
++  if (!table || !table.length) return 0;
++  const v = compVec(f);
++  const near = table
++    .map((c) => ({ d: v.reduce((s, a, i) => s + (a - c[i]) ** 2, 0), res: c[c.length - 1] }))
++    .sort((a, b) => a.d - b.d)
++    .slice(0, COMPS_K);
++  const avg = near.reduce((s, c) => s + Math.max(-COMPS_CLIP, Math.min(COMPS_CLIP, c.res)), 0) / near.length;
++  return avg * (near.length / (near.length + COMPS_SHRINK));
++}
++
+ // ---- prediction -----------------------------------------------------------
+ 
+ // Returns market valuation for one featurized car:
+@@ -216,12 +297,22 @@
+   const block = per || model.global;
+   // location premium/discount learned from the training residuals per PLZ zone
+   const regionAdj = (f.plzZone && model.regionAdj?.[f.plzZone]) || 0;
+-  const logPred = baseLogPred(model, f) + regionAdj;
+-  const marketPrice = Math.exp(logPred) * block.smearing;
++  // regression (+ smearing) corrected by the nearest comparable listings
++  let logPred = baseLogPred(model, f) + Math.log(block.smearing);
++  let bandSigma = block.sigma;
++  if (per) logPred += compsAdj(model, f);
++  // blend with the boosted trees (main models only; sparse models stay linear)
++  const trees = model.trees;
++  if (per && trees && trees.sigma[f.model] != null) {
++    logPred = (1 - TREE_WEIGHT) * logPred + TREE_WEIGHT * gbmPredict(trees, treeRow(f));
++    bandSigma = (1 - TREE_WEIGHT) * block.sigma + TREE_WEIGHT * trees.sigma[f.model];
++  }
++  logPred += regionAdj;
++  const marketPrice = Math.exp(logPred);
+   // widen the band and flag when the car sits beyond the training support
+   const extrapolated = f.ageYears > block.ranges.ageHi || f.mileageKm > block.ranges.mileageHi ||
+     (block.ranges.kmPerYearHi != null && kmPerYear(f) > block.ranges.kmPerYearHi);
+-  const sigma = extrapolated ? block.sigma * 1.8 : block.sigma;
++  const sigma = extrapolated ? bandSigma * 1.8 : bandSigma;
+   return {
+     marketPrice: Math.round(marketPrice),
+     low: Math.round(marketPrice * Math.exp(-sigma)),
+--- a/pricing/features.js
++++ b/pricing/features.js
+@@ -32,7 +32,10 @@
+ // Normalize both to the same small set of raw strings.
+ function rawFields(ad) {
+   if (ad.attr) {
+-    return { reg: ad.attr.fr, km: ad.attr.ml, kw: ad.attr.pw, country: ad.attr.cn, zip: ad.attr.z, title: `${ad.shortTitle || ''} ${ad.subTitle || ''}` };
++    return {
++      reg: ad.attr.fr, km: ad.attr.ml, kw: ad.attr.pw, country: ad.attr.cn, zip: ad.attr.z, title: `${ad.shortTitle || ''} ${ad.subTitle || ''}`,
++      battery: ad.attr.bc, seats: ad.attr.sc, owners: ad.attr.pvo, hu: ad.attr.gi, sellerType: ad.contactInfo?.sellerType,
++    };
+   }
+   const byTag = {};
+   for (const a of ad.attributes || []) byTag[a.tag] = a.value;
+@@ -44,6 +47,11 @@
+     // detail pages carry the address as "DE-85662 Hohenbrunn ..." in address2
+     zip: (ad.contactInfo?.address2 || '').match(/\b(\d{5})\b/)?.[1],
+     title: `${ad.shortTitle || ''} ${ad.subTitle || ''} ${byTag.trimLine || ''}`,
++    battery: byTag.batteryCapacity,
++    seats: byTag.numSeats,
++    owners: byTag.numberOfPreviousOwners,
++    hu: byTag.hu,
++    sellerType: ad.contactInfo?.sellerType,
+   };
+ }
+ 
+@@ -58,12 +66,13 @@
+   const has = (re) => re.test(t);
+ 
+   const plaid = has(/plaid/);
+-  const performance = plaid || has(/performance|ludicrous|\bp\d{2,3}\b|\bperf\b/);
+-  const longRange = has(/long.?range|maximale reichweite|gro(ß|ss)er akku|\blr\b|dual motor|dual awd/);
++  // "P100DL", "P 90 D" and the common "Peformance" typo are Performance too
++  const performance = plaid || has(/performance|peformance|ludicrous|\bp\s?\d{2,3}\s?d?l?\b|\bperf\b|\bm3p\b|\bmyp\b/);
++  const longRange = has(/long.?range|maximale reichweite|gro(ß|ss)er akku|\blr\b|dual motor|dual awd|dualmotor/);
+   const srPlus = has(/standard range plus|\bsr\s*\+|standard plus/);
+-  const srBase = has(/standard range|\bsr\b|\brwd\b|hinterrad|hinterradantrieb/);
+-  // AWD: dual motor, allrad, or the "D" battery suffix on S/X (75D, 90D, 100D)
+-  const awd = performance || longRange || has(/allrad|\bawd\b|4wd|dual|\b\d{2,3}\s*d\b|\bxd\b/);
++  const srBase = has(/standard range|\bsr\b|\brwd\b|hinterrad|hinterradantrieb|rear.?wheel/);
++  // AWD: dual motor, allrad, or the "D" battery suffix on S/X (75D, 90D, 100D, "S75D")
++  const awd = performance || longRange || has(/allrad|\bawd\b|4wd|dual|\b\d{2,3}\s*d\b|\bxd\b|[sx]\d{2,3}d\b/);
+ 
+   const is3Y = model === 'Model 3' || model === 'Model Y';
+   let label;
+@@ -82,9 +91,33 @@
+       : longRange ? 'Long Range'
+       : 'Standard';
+   }
+-  return { label, awd: awd ? 1 : 0, performance: performance ? 1 : 0, plaid: plaid ? 1 : 0, longRange: longRange ? 1 : 0 };
++  return {
++    label, awd: awd ? 1 : 0, performance: performance ? 1 : 0, plaid: plaid ? 1 : 0, longRange: longRange ? 1 : 0,
++    srPlus: srPlus ? 1 : 0, srBase: srBase ? 1 : 0,
++  };
+ }
+ 
++// Usable battery capacity (kWh): the structured field when the seller filled it
++// in, else the title ("75 kWh", or the S/X tier in "P100DL" / "S75D"). Null if
++// unknown; the engine treats missing as its own level.
++function batteryKwh(model, rawBattery, title) {
++  const bc = (rawBattery || '').match(/(\d{2,3})\s*kWh/i);
++  if (bc) return +bc[1];
++  const t = ` ${(title || '').toLowerCase()} `;
++  const kwh = t.match(/(\d{2,3})\s*kwh/);
++  if (kwh && +kwh[1] >= 50 && +kwh[1] <= 125) return +kwh[1];
++  if (model === 'Model S' || model === 'Model X') {
++    const m = t.match(/(?:\b|[sx]|p)(100|90|85|75|70|60)\s*d?l?\b/);
++    if (m) return +m[1];
++  }
++  return null;
++}
++
++// Equipment / history signals sellers put in the title that measurably move
++// the asking price: transferable free Supercharging (old S/X, ~+15%), FSD.
++const FREE_SC_RE = /sc01|free\s*(super)?charg|freies?\s*(super)?(laden|charg)|kostenlos\w*\s*(super)?(laden|charg)|\bfusc\b|lifetime|supercharger.?free|free.?supercharg|frei(es)? (super)?charg|supercharging frei/;
++const FSD_RE = /\bfsd\b|full self|autonomes fahren/;
++
+ // Maps an AI label's trueTrim (or any trim string) back to the model feature
+ // flags, so a corrected trim drives the regression the same way a parsed one does.
+ function flagsFromTrim(model, trimStr) {
+@@ -136,6 +169,10 @@
+   // prefer the AI-corrected trim when available; fall back to title parsing
+   const trim = label?.trueTrim ? flagsFromTrim(model, label.trueTrim) : classifyTrim(model, f.title);
+   if (label?.trueTrim) trim.label = label.trueTrim;
++  const t = (f.title || '').toLowerCase();
++  const regDec = referenceDate - ageYears; // after any title correction
++  const seats = +(f.seats || 0);
++  const owners = f.owners != null && f.owners !== '' && !Number.isNaN(+f.owners) ? Math.min(+f.owners, 4) : null;
+ 
+   return {
+     id: ad.id,
+@@ -153,9 +190,23 @@
+     performance: trim.performance,
+     plaid: trim.plaid,
+     longRange: trim.longRange,
++    srPlus: trim.srPlus,
++    srBase: trim.srBase,
++    batteryKwh: batteryKwh(model, f.battery, f.title),
++    // generations (EU first deliveries): Model 3 "Highland" ~10/2023, Model Y
++    // "Juniper" ~03/2025, Model S/X refresh (Plaid, new interior) ~2021
++    highland: model === 'Model 3' && (regDec >= 2023.75 || /highland/.test(t)) ? 1 : 0,
++    juniper: model === 'Model Y' && (regDec >= 2025.17 || /juniper/.test(t)) ? 1 : 0,
++    refresh: (model === 'Model S' || model === 'Model X') && regDec >= 2021.3 ? 1 : 0,
++    freeSupercharging: FREE_SC_RE.test(t) ? 1 : 0,
++    fsd: FSD_RE.test(t) ? 1 : 0,
++    sevenSeats: seats >= 6 || /7[\s-]*sitz|7[\s-]*seat|6[\s-]*sitz/.test(t) ? 1 : 0,
++    privateSeller: f.sellerType === 'PRIVATE' ? 1 : 0,
++    owners, // previous owners, capped at 4; null if not stated
++    huNew: f.hu === 'Neu' ? 1 : 0, // fresh TÜV/HU
+     corrections,
+     regYear: Math.floor(reg), // after any title correction
+   };
+ }
+ 
+-module.exports = { featurize, classifyTrim, parseRegDate, parseKm, parseKw, REFERENCE_DATE };
++module.exports = { featurize, classifyTrim, batteryKwh, parseRegDate, parseKm, parseKw, REFERENCE_DATE };
+--- /dev/null
++++ b/pricing/gbm.js
+@@ -0,0 +1,134 @@
++// Gradient-boosted regression trees, dependency-free.
++//
++// Histogram-based (features are pre-binned into quantile bins), Huber loss so a
++// few absurd listings can't dominate, and optional monotone constraints so the
++// trees can never say "more km = more expensive". The fitted model is plain
++// JSON (bin edges + node arrays) so it can live inside pricing/model.json.
++//
++// opts: { nTrees, lr, depth, minLeaf, bins, subsample, seed, huberDelta, l2,
++//         monotone: array of -1 / 0 / +1 per feature }
++
++function rng(seed) {
++  let s = seed >>> 0;
++  return () => {
++    s = (s + 0x6d2b79f5) >>> 0;
++    let t = s;
++    t = Math.imul(t ^ (t >>> 15), t | 1);
++    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
++    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
++  };
++}
++
++function binEdges(col, nb) {
++  const s = [...col].sort((a, b) => a - b);
++  const edges = [];
++  for (let i = 1; i < nb; i++) {
++    const v = s[Math.floor((i * s.length) / nb)];
++    if (v !== undefined && (edges.length === 0 || v > edges[edges.length - 1])) edges.push(v);
++  }
++  return edges;
++}
++
++function toBin(v, edges) {
++  let lo = 0;
++  let hi = edges.length;
++  while (lo < hi) {
++    const m = (lo + hi) >> 1;
++    if (v < edges[m]) hi = m;
++    else lo = m + 1;
++  }
++  return lo;
++}
++
++const median = (xs) => {
++  const s = [...xs].sort((a, b) => a - b);
++  return s.length % 2 ? s[s.length >> 1] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
++};
++
++function gbmFit(X, y, opts = {}) {
++  const o = { nTrees: 400, lr: 0.05, depth: 4, minLeaf: 8, bins: 64, subsample: 0.8, seed: 1, huberDelta: 0.08, l2: 1, ...opts };
++  const n = X.length;
++  const p = X[0].length;
++  const mono = o.monotone || new Array(p).fill(0);
++  const edges = [];
++  const B = [];
++  for (let j = 0; j < p; j++) {
++    edges[j] = binEdges(X.map((r) => r[j]), o.bins);
++    B[j] = Uint8Array.from(X, (r) => toBin(r[j], edges[j]));
++  }
++  const nb = edges.map((e) => e.length + 1);
++  const base = median(y);
++  const F = new Float64Array(n).fill(base);
++  const grad = new Float64Array(n);
++  const rand = rng(o.seed);
++  const trees = [];
++
++  for (let t = 0; t < o.nTrees; t++) {
++    for (let i = 0; i < n; i++) grad[i] = Math.max(-o.huberDelta, Math.min(o.huberDelta, y[i] - F[i]));
++    const sample = [];
++    for (let i = 0; i < n; i++) if (rand() < o.subsample) sample.push(i);
++
++    // node = [feature, binThreshold, leftIdx, rightIdx] or [leafValue]
++    const nodes = [];
++    const build = (rows, depth, lo, hi) => {
++      let sg = 0;
++      for (const i of rows) sg += grad[i];
++      const id = nodes.length;
++      nodes.push([Math.max(lo, Math.min(hi, sg / (rows.length + o.l2)))]);
++      if (depth >= o.depth || rows.length < 2 * o.minLeaf) return id;
++      let best = null;
++      for (let j = 0; j < p; j++) {
++        const gs = new Float64Array(nb[j]);
++        const cs = new Float64Array(nb[j]);
++        for (const i of rows) { gs[B[j][i]] += grad[i]; cs[B[j][i]]++; }
++        let gl = 0;
++        let cl = 0;
++        for (let b = 0; b < nb[j] - 1; b++) {
++          gl += gs[b];
++          cl += cs[b];
++          const cr = rows.length - cl;
++          if (cl < o.minLeaf || cr < o.minLeaf) continue;
++          const gr = sg - gl;
++          const vl = gl / (cl + o.l2);
++          const vr = gr / (cr + o.l2);
++          if ((mono[j] > 0 && vl > vr) || (mono[j] < 0 && vl < vr)) continue;
++          const gain = (gl * gl) / (cl + o.l2) + (gr * gr) / (cr + o.l2) - (sg * sg) / (rows.length + o.l2);
++          if (!best || gain > best.gain) best = { gain, j, b, vl, vr };
++        }
++      }
++      if (!best || best.gain <= 1e-12) return id;
++      const L = [];
++      const R = [];
++      for (const i of rows) (B[best.j][i] <= best.b ? L : R).push(i);
++      // monotone: children are bounded by the midpoint so deeper splits can't
++      // undo the ordering
++      let [lLo, lHi, rLo, rHi] = [lo, hi, lo, hi];
++      const mid = (best.vl + best.vr) / 2;
++      if (mono[best.j] > 0) { lHi = Math.min(hi, mid); rLo = Math.max(lo, mid); }
++      if (mono[best.j] < 0) { lLo = Math.max(lo, mid); rHi = Math.min(hi, mid); }
++      const l = build(L, depth + 1, lLo, lHi);
++      const r = build(R, depth + 1, rLo, rHi);
++      nodes[id] = [best.j, best.b, l, r];
++      return id;
++    };
++    build(sample, 0, -Infinity, Infinity);
++    for (let i = 0; i < n; i++) F[i] += o.lr * leafOf(nodes, (j) => B[j][i]);
++    trees.push(nodes);
++  }
++  return { model: { base, lr: o.lr, edges, trees }, trainPred: Array.from(F) };
++}
++
++function leafOf(nodes, binOf) {
++  let k = 0;
++  while (nodes[k].length > 1) k = binOf(nodes[k][0]) <= nodes[k][1] ? nodes[k][2] : nodes[k][3];
++  return nodes[k][0];
++}
++
++function gbmPredict(model, x) {
++  const bins = x.map((v, j) => toBin(v, model.edges[j]));
++  let s = model.base;
++  for (const nodes of model.trees) s += model.lr * leafOf(nodes, (j) => bins[j]);
++  return s;
++}
++
++module.exports = { gbmFit, gbmPredict };
+--- a/pricing/engine.test.js
++++ b/pricing/engine.test.js
+@@ -284,5 +284,70 @@
+   });
+   assert.strictEqual(v.extrapolated, true);
+ });
++
+ 
++// ---- lab proposal: richer features, comps correction, boosted trees ----
++const { batteryKwh } = require('./features');
++test('classifyTrim catches P100DL, S75D and the "Peformance" typo', () => {
++  assert.strictEqual(classifyTrim('Model S', 'MODEL S P100DL silber').performance, 1);
++  assert.strictEqual(classifyTrim('Model S', 'Dual PEFORMANCE SC01').performance, 1);
++  assert.strictEqual(classifyTrim('Model S', 'MODEL S75D MCU2').awd, 1);
++  assert.strictEqual(classifyTrim('Model 3', 'Rear-Wheel Drive').srBase, 1);
++});
++test('batteryKwh prefers the structured field, then the title', () => {
++  assert.strictEqual(batteryKwh('Model 3', '79 kWh', 'Long Range'), 79);
++  assert.strictEqual(batteryKwh('Model 3', undefined, 'TESLA MODEL 3 75 KWH PERFORMANCE'), 75);
++  assert.strictEqual(batteryKwh('Model S', undefined, 'MODEL S P100DL'), 100);
++  assert.strictEqual(batteryKwh('Model S', undefined, '90D Allrad'), 90);
++  assert.strictEqual(batteryKwh('Model 3', undefined, 'Long Range'), null);
++});
++test('featurize extracts generation, equipment and seller signals', () => {
++  const f = featurize({
++    model: 'Model 3', price: { grossAmount: 40000 }, shortTitle: 'Tesla Model 3', subTitle: 'Long Range FSD SC01 free Supercharging',
++    attr: { fr: '03/2024', ml: '20.000 km', pw: '366 kW (498 PS)', bc: '79 kWh', sc: '5', pvo: '2', gi: 'Neu' },
++    contactInfo: { sellerType: 'PRIVATE' },
++  });
++  assert.strictEqual(f.highland, 1);
++  assert.strictEqual(f.fsd, 1);
++  assert.strictEqual(f.freeSupercharging, 1);
++  assert.strictEqual(f.batteryKwh, 79);
++  assert.strictEqual(f.privateSeller, 1);
++  assert.strictEqual(f.owners, 2);
++  assert.strictEqual(f.huNew, 1);
++  const old = featurize({ model: 'Model 3', price: { grossAmount: 30000 }, attr: { fr: '03/2022', ml: '20.000 km', pw: '366 kW (498 PS)' } });
++  assert.strictEqual(old.highland, 0);
++  assert.strictEqual(old.owners, null);
++  assert.strictEqual(old.batteryKwh, null);
++});
++test('trained model is plain JSON and predicts identically after a round-trip', () => {
++  const copy = JSON.parse(JSON.stringify(model));
++  const f = rows.find((r) => r.model === 'Model S');
++  assert.strictEqual(predict(copy, f).marketPrice, predict(model, f).marketPrice);
++  assert.ok(model.trees && model.trees.trees.length > 0, 'boosted trees trained');
++  assert.ok(model.comps['Model 3'].length > 40, 'comps table stored');
++});
++test('mileage sweep never raises the price (trees are monotone, comps bounded)', () => {
++  for (const m of ['Model 3', 'Model Y', 'Model S', 'Model X']) {
++    let prev = Infinity;
++    for (let km = 10000; km <= 250000; km += 20000) {
++      const p = priceOf({ model: m, shortTitle: `Tesla ${m}`, attr: { fr: '07/2020', ml: `${km} km`, pw: '250 kW (340 PS)' } });
++      // comps can wiggle a step by a few % when the neighbour set changes; the
++      // overall trend must still fall and no step may rise by more than 3%
++      assert.ok(p <= prev * 1.03, `${m} ${km} km: ${p} vs previous ${prev}`);
++      prev = Math.min(prev, p);
++    }
++  }
++});
++test('free Supercharging raises an old Model S estimate', () => {
++  const base = { model: 'Model S', shortTitle: 'Tesla Model S', attr: { fr: '06/2016', ml: '150.000 km', pw: '310 kW (421 PS)' } };
++  const plain = priceOf({ ...base, subTitle: '85D' });
++  const freeSc = priceOf({ ...base, subTitle: '85D Free Supercharging' });
++  assert.ok(freeSc > plain, `free SC ${freeSc} vs plain ${plain}`);
++});
++test('comps correction stays within its clip', () => {
++  const f = rows.find((r) => r.model === 'Model Y');
++  const noComps = { ...model, comps: {} };
++  const ratio = predict(model, f).marketPrice / predict(noComps, f).marketPrice;
++  assert.ok(ratio > Math.exp(-0.15) - 0.01 && ratio < Math.exp(0.15) + 0.01, `ratio ${ratio}`);
++});
+ console.log(`\n${passed} passed`);
