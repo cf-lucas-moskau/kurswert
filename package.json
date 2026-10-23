@@ -10,12 +10,14 @@
     "details": "node src/fetch_details.js",
     "details-csv": "node src/build_details_csv.js",
     "label": "node pricing/label.js",
+    "label-claude": "node pricing/label_claude.js",
     "train": "node pricing/train.js",
     "value-newest": "node pricing/value_newest.js",
+    "nightly": "node pricing/nightly.js",
     "scrape-dealer": "node pricing/scrape_dealer.js",
     "send-offer": "node pricing/send_offer.js",
     "evaluate": "node pricing/evaluate.js",
-    "test": "node pricing/engine.test.js && node pricing/price_history.test.js && node pricing/load_ads.test.js",
+    "test": "node pricing/engine.test.js && node pricing/price_history.test.js && node pricing/load_ads.test.js && node pricing/labels.test.js && node pricing/nightly.test.js && node web/seen.test.js",
     "serve": "node web/serve.js"
   },
   "dependencies": {

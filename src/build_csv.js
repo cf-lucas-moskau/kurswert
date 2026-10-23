@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA = path.join(__dirname, '..', 'data');
+const { DATA } = require('./paths');
 const ads = JSON.parse(fs.readFileSync(path.join(DATA, 'raw_ads.json'), 'utf8'));
 const deOnly = process.argv.includes('--de');
 const out = path.join(DATA, deOnly ? 'listings_de.csv' : 'listings.csv');

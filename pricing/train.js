@@ -1,6 +1,7 @@
 // Trains the market-price model from the current listings and writes:
-//   pricing/model.json    - the trained model (coefficients etc.), for reuse
-//   web/valuations.json   - every listing with its market valuation, for the UI
+//   model.json        - the trained model (coefficients etc.), for reuse
+//   valuations.json   - every listing with its market valuation, for the UI
+// both in the data dir (src/paths.js)
 //
 // Re-run after any fresh scrape to re-price everything against the new market:
 //   node pricing/train.js
@@ -11,8 +12,9 @@ const { featurize } = require('./features');
 const firstSeen = require('./first_seen');
 const priceHistory = require('./price_history');
 const { loadAds, makeTrainingFilter } = require('./load_ads');
+const { DATA, dataFile } = require('../src/paths');
+const { needsLabel } = require('./labels');
 
-const ROOT = path.join(__dirname, '..');
 // mobile.de + AutoScout24 (cross-posted cars counted once)
 const { ads, crossPosts } = loadAds();
 console.log(`${ads.length} listings (${ads.filter((a) => a.source === 'autoscout24').length} from AutoScout24, ${crossPosts} cross-posts dropped)`);
@@ -22,9 +24,14 @@ priceHistory.observe(ads);
 const TODAY = new Date();
 const daysSince = (day) => (day ? Math.max(0, Math.round((TODAY - new Date(day)) / 86400000)) : null);
 
-// AI labels (data/labels.json) correct the trim and flag damage/defects.
-const labelsPath = path.join(ROOT, 'data', 'labels.json');
+// AI labels (labels.json) correct the trim and flag damage/defects.
+const labelsPath = dataFile('labels.json');
 const labels = fs.existsSync(labelsPath) ? JSON.parse(fs.readFileSync(labelsPath, 'utf8')) : {};
+// a mobile.de car whose detail page or label is still outstanding is unvetted:
+// shown, but never a deal (AutoScout24 has no detail pages, so never pending)
+const detailsPath = dataFile('raw_details.json');
+const details = fs.existsSync(detailsPath) ? JSON.parse(fs.readFileSync(detailsPath, 'utf8')) : {};
+const isPendingLabel = (a) => a.source !== 'autoscout24' && (!details[a.id] || needsLabel(a, details, labels));
 // a car is a clean comparable for training only if unlabeled or labeled clean
 // with a healthy battery; damaged/defective/salvage cars would bias the market down
 const isCleanComp = (id) => {
@@ -42,8 +49,9 @@ const isTrainingRow = makeTrainingFilter(ads, labels);
 const trainRows = all.filter(isTrainingRow);
 const excluded = all.filter((r) => r.country === 'DE' && !isCleanComp(r.id)).length;
 const model = train(trainRows);
-fs.writeFileSync(path.join(__dirname, 'model.json'), JSON.stringify(model));
-console.log(`trained German market model on ${trainRows.length} clean DE listings (excluded ${excluded} damaged/flagged) -> pricing/model.json`);
+fs.mkdirSync(DATA, { recursive: true });
+fs.writeFileSync(dataFile('model.json'), JSON.stringify(model));
+console.log(`trained German market model on ${trainRows.length} clean DE listings (excluded ${excluded} damaged/flagged) -> model.json`);
 
 // Build the per-listing valuation feed the UI consumes. Market price is fixed
 // here; the UI applies the dealer's margin live (maxBuyPrice = market/(1+margin)).
@@ -69,6 +77,7 @@ for (const a of ads) {
     caveats: label?.priceCaveats || [],
     flagged,
     labeled: !!label,
+    pendingLabel: isPendingLabel(a),
     firstSeen: seenMap[a.id] || null,
     daysOnMarket: daysSince(seenMap[a.id]), // days since we first saw it (lower bound on listing age)
     priceDrop: priceHistory.dropInfo(a.id), // null unless the seller cut the price
@@ -135,25 +144,24 @@ if (fs.existsSync(calibPath)) {
   }
 }
 
-fs.mkdirSync(path.join(ROOT, 'web'), { recursive: true });
 fs.writeFileSync(
-  path.join(ROOT, 'web', 'valuations.json'),
+  dataFile('valuations.json'),
   JSON.stringify({ generatedFrom: trainRows.length, referenceDate: model.referenceDate, calibration, listings: out })
 );
-console.log(`wrote ${out.length} valuations -> web/valuations.json`);
+console.log(`wrote ${out.length} valuations -> valuations.json`);
 
-// Rebuild the New-arrivals feed (web/newest.json) from the fully-labeled
+// Rebuild the New-arrivals feed (newest.json) from the fully-labeled
 // valuations, in the listing-recency order value_newest recorded. This is what
 // makes the "Neue Angebote" tab show corrected trims and damage/defect flags
 // instead of the provisional, label-free version value_newest wrote at fetch time.
-const newestIdsPath = path.join(ROOT, 'data', 'newest_ids.json');
+const newestIdsPath = dataFile('newest_ids.json');
 if (fs.existsSync(newestIdsPath)) {
   const { fetchedAt, ids } = JSON.parse(fs.readFileSync(newestIdsPath, 'utf8'));
   const byId = Object.fromEntries(out.map((l) => [String(l.id), l]));
   const newestListings = ids.map((id) => byId[String(id)]).filter(Boolean);
   fs.writeFileSync(
-    path.join(ROOT, 'web', 'newest.json'),
+    dataFile('newest.json'),
     JSON.stringify({ fetchedAt, listings: newestListings })
   );
-  console.log(`rebuilt web/newest.json: ${newestListings.length} fresh arrivals, now with labels/flags`);
+  console.log(`rebuilt newest.json: ${newestListings.length} fresh arrivals, now with labels/flags`);
 }

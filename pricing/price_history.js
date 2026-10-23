@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const FILE = process.env.PRICE_HISTORY_FILE || path.join(__dirname, '..', 'data', 'price_history.json');
+const FILE = process.env.PRICE_HISTORY_FILE || require('../src/paths').dataFile('price_history.json');
 
 let cache = null;
 function load() {

@@ -185,6 +185,9 @@
       .rb { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 4px 8px; border-radius: 6px; line-height: 1.2; }
       .rb.deal { background: #146c43; color: #fff; }
       .rb.new { background: #17181a; color: #fff; }
+      .card.seen { opacity: .55; transition: opacity .4s; }
+      .card.seen:hover { opacity: 1; }
+      .tab .count { margin-left: 6px; vertical-align: 1px; }
 
       .cb { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
       .head { display: flex; align-items: flex-start; gap: 10px; }
@@ -210,6 +213,7 @@
       .tag.damage { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
       .tag.drop { background: var(--info-bg); color: var(--info); }
       .tag.import { background: var(--warn-bg); color: var(--warn); }
+      .tag.pending { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
       .tag.source { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
 
       .pricing { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; align-items: baseline; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -280,8 +284,8 @@
         .brand { flex-basis: 100%; align-items: flex-start; }
         .mark { margin-top: 2px; }
         .tagline { font-size: 12px; }
-        .tabs { width: 100%; }
-        .tab { flex: 1; padding: 7px 6px; font-size: 12.5px; }
+        .tabs { width: 100%; overflow-x: auto; scrollbar-width: none; }
+        .tab { flex: 1 0 auto; padding: 7px 10px; font-size: 12.5px; white-space: nowrap; }
         .bar { position: static; backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg); }
         .bar-in { padding: 12px 16px; gap: 12px; }
         .group { width: 100%; flex-wrap: wrap; gap: 10px 12px; }
@@ -327,7 +331,8 @@
           </div>
         </div>
         <nav class="tabs" role="tablist" aria-label="Datenquelle">
-          <button type="button" class="tab active" role="tab" aria-selected="true" data-src="newest">Neue Angebote</button>
+          <button type="button" class="tab active" role="tab" aria-selected="true" data-src="unseen">Neu für dich<span class="count" id="unseenCount"></span></button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-src="newest">Neue Angebote</button>
           <button type="button" class="tab" role="tab" aria-selected="false" data-src="valuations">Gesamtmarkt</button>
           <button type="button" class="tab" role="tab" aria-selected="false" data-src="dealer">Eigener Bestand</button>
         </nav>
@@ -422,6 +427,7 @@
       <div id="calib"></div>
       <div class="summary">
         <div class="stats" id="stats" aria-live="polite"></div>
+        <button type="button" class="linkbtn" id="markAll" hidden>Alle als gesehen markieren</button>
         <div class="legend" aria-hidden="true">
           <span><i class="lg-band"></i>Marktspanne</span>
           <span><i class="lg-mkt"></i>Marktwert</span>
@@ -457,8 +463,10 @@
       </div>
     </div>
 
+    <script src="deal.js"></script>
+    <script src="seen.js"></script>
     <script>
-      const state = { src: 'newest', margin: 0.15, holdDays: 95, holdCost: 10, data: {}, tmpl: null, active: null, calib: null };
+      const state = { offers: false, seen: null, seenBase: null, src: 'unseen', margin: 0.15, holdDays: 95, holdCost: 10, data: {}, tmpl: null, active: null, calib: null };
       const euro = (n) => n == null ? '–' : '€' + Math.round(n).toLocaleString('de-DE');
       const km = (n) => n == null ? '–' : n.toLocaleString('de-DE') + ' km';
       const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -466,6 +474,9 @@
       const pct = (n) => n.toLocaleString('de-DE', { maximumFractionDigits: 1 });
 
       async function load(src) {
+        // the unseen list is fixed when the tab opens, so cards marked seen
+        // while scrolling stay in place (dimmed) instead of jumping away
+        if (src === 'unseen') return (state.data.valuations || []).filter((l) => Seen.isUnseen(state.seenBase, l));
         if (state.data[src]) return state.data[src];
         const file = { newest: 'newest.json', valuations: 'valuations.json', dealer: 'dealer.json' }[src];
         try {
@@ -476,18 +487,8 @@
         return state.data[src];
       }
 
-      // Deal = asking at or below the max buy price for the target margin, and the
-      // valuation is in-range. Recomputed here so the slider needs no round-trip.
-      function withDeal(l) {
-        // buy target = market/(1+margin) minus the cost of the car standing on
-        // the lot until resale (Standtage × €/Tag), the standard dealer formula
-        const holding = Math.round(state.holdDays * state.holdCost);
-        const maxBuy = Math.max(0, Math.round(l.marketPrice / (1 + state.margin)) - holding);
-        // a genuine buy is below the target, in the model's range, and not flagged
-        // for accident/defect/salvage by the AI labeling pass, and its listing
-        // data is self-consistent (a title-corrected car needs a human check first)
-        return { ...l, maxBuy, holding, isDealNow: l.asking != null && l.asking <= maxBuy && !l.extrapolated && !l.flagged && !l.corrections?.length && !l.implausiblePrice };
-      }
+      // recomputed here (rule in deal.js) so the slider needs no round-trip
+      const withDeal = (l) => Deal.withDeal(l, state);
       const fmtDelta = (d) => d == null ? '' : `<span class="delta ${d <= 0 ? 'under' : 'over'}">${d > 0 ? '+' : d < 0 ? '−' : ''}${pct(Math.abs(d))}%</span>`;
 
       const CONDITION_LABEL = {
@@ -501,7 +502,7 @@
       function ribbon(l) {
         let r = '';
         if (l.isDealNow) r += '<span class="rb deal">Chance</span>';
-        if (l.isNewToday) r += '<span class="rb new">Neu</span>';
+        if (l.isNewToday || Seen.isUnseen(state.seen, l)) r += '<span class="rb new">Neu</span>';
         return r ? `<div class="ribbon">${r}</div>` : '';
       }
       // everything else is context, shown as quiet tags under the specs
@@ -516,6 +517,7 @@
         }
         // seller cut the price = motivated seller; the classic outreach trigger
         if (l.priceDrop) b.push(`<span class="tag drop">Preis ↓ ${Math.abs(l.priceDrop.totalDropPct)}%${l.priceDrop.drops > 1 ? ` (${l.priceDrop.drops}×)` : ''}</span>`);
+        if (l.pendingLabel) b.push('<span class="tag pending" title="Beschreibung noch nicht auf Schäden und Ausstattung geprüft (npm run label-claude). Bis dahin keine Chance.">Ungeprüft</span>');
         if (l.isImport) b.push(`<span class="tag import">Import ${esc(l.country)}</span>`);
         if (l.implausiblePrice) b.push('<span class="tag damage" title="Mehr als 30% unter Markt: so weit liegt kein geprüftes, unfallfreies Inserat darunter. Vermutlich Schaden, Betrug oder Datenfehler">Preis unplausibel</span>');
         if (l.extrapolated) b.push('<span class="tag" title="Fahrzeug liegt außerhalb der Trainingsdaten, Bewertung extrapoliert">außerh. Datenbasis</span>');
@@ -547,6 +549,11 @@
 
       const PH = `<div class="noimg"><svg width="56" height="24" viewBox="0 0 56 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 17v-3.5c0-1 .7-1.9 1.7-2.1L15 9l7-5h14l9 6 7 1.5c1 .2 1.5 1 1.5 2V17"/><circle cx="14" cy="18" r="3.5"/><circle cx="42" cy="18" r="3.5"/><path d="M17.5 18h21"/></svg></div>`;
 
+      // older first-seen entries are plain dates, newer ones carry the time
+      const seenAt = (s) => new Date(s).toLocaleString('de-DE', s.length > 10
+        ? { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }
+        : { day: '2-digit', month: '2-digit', year: 'numeric' });
+
       function card(l) {
         const asking = l.asking != null ? l.asking : l.price;
         const img = l.image ? `<img src="${esc(l.image)}" alt="" loading="lazy" decoding="async" onerror="this.remove()" />` : '';
@@ -556,13 +563,15 @@
         const place = l.city || l.country || '';
         const dist = l.dist != null ? ` (${Math.round(l.dist)} km)` : '';
         const line = (parts) => { const p = parts.filter(Boolean); return p.length ? `<div>${p.map((s) => `<span>${s}</span>`).join('')}</div>` : ''; };
+        const observed = state.src === 'unseen' && l.firstSeen ? `erstmals gesehen ${seenAt(l.firstSeen)}` : dom != null ? `seit ≥${dom} Tg. beobachtet` : '';
         const meta = line([l.year || '–', km(l.mileageKm ?? l.km), l.powerKw ? l.powerKw + ' kW' : '']) +
-          line([place ? esc(place) + dist : '', dom != null ? `<span class="dim">seit ≥${dom} Tg. beobachtet</span>` : '']);
+          line([place ? esc(place) + dist : '', observed ? `<span class="dim">${observed}</span>` : '']);
         const region = l.regionPct ? `<span title="Regionale Preisanpassung (PLZ-Zone)">Region ${l.regionPct > 0 ? '+' : '−'}${Math.abs(l.regionPct)}%</span>` : '';
         const dropLine = l.priceDrop ? `<div class="was num">vorher ${euro(l.priceDrop.firstPrice)} · zuletzt gesenkt ${esc(l.priceDrop.lastDropDate)}</div>` : '';
         const trim = l.trim && !displayTitle(l).toLowerCase().includes(l.trim.toLowerCase()) ? ` <span class="trim">${esc(l.trim)}</span>` : '';
         const variant = l.variant && l.variant.trim() !== (l.trim || '') ? esc(l.variant) : '';
-        return `<article class="card ${l.isDealNow ? 'deal' : ''}">
+        const seenCls = state.src === 'unseen' && !Seen.isUnseen(state.seen, l) ? ' seen' : '';
+        return `<article class="card${l.isDealNow ? ' deal' : ''}${seenCls}"${l.id != null ? ` data-id="${esc(l.id)}"` : ''}>
           <div class="ph">${PH}${img}${ribbon(l)}</div>
           <div class="cb">
             <div class="head">
@@ -590,7 +599,7 @@
                 <div class="target ${l.isDealNow ? 'ok' : ''} num">${euro(l.maxBuy)}</div>
               </div>
               <div class="actions">
-                ${l.source === 'autoscout24' ? '' : `<button type="button" class="send" data-id="${esc(l.id)}">Angebot senden</button>`}
+                ${l.source === 'autoscout24' || !state.offers ? '' : `<button type="button" class="send" data-id="${esc(l.id)}">Angebot senden</button>`}
                 <a class="view" href="${esc(l.url)}" target="_blank" rel="noopener">Inserat ansehen ↗</a>
               </div>
             </div>
@@ -663,7 +672,7 @@
         list.sort((a, b) =>
           sort === 'market' ? b.marketPrice - a.marketPrice :
           sort === 'asking' ? (a.asking ?? a.price) - (b.asking ?? b.price) :
-          sort === 'recency' ? (a.listedRank ?? 1e9) - (b.listedRank ?? 1e9) :
+          sort === 'recency' ? (a.listedRank ?? 1e9) - (b.listedRank ?? 1e9) || (Date.parse(b.firstSeen) || 0) - (Date.parse(a.firstSeen) || 0) :
           sort === 'drops' ? (a.priceDrop?.totalDropPct ?? 1) - (b.priceDrop?.totalDropPct ?? 1) :
           sort === 'dist' ? (a.dist ?? 1e9) - (b.dist ?? 1e9) :
           a.deltaPct - b.deltaPct);
@@ -676,7 +685,7 @@
         const deals = list.filter((l) => l.isDealNow).length;
         const drops = list.filter((l) => l.priceDrop).length;
         const fmt = (x) => x.toLocaleString('de-DE');
-        const srcLabel = { newest: 'neue Angebote', valuations: 'Marktinserate', dealer: 'eigene Fahrzeuge' }[state.src];
+        const srcLabel = { unseen: 'noch nicht gesehen', newest: 'neue Angebote', valuations: 'Marktinserate', dealer: 'eigene Fahrzeuge' }[state.src];
         document.getElementById('stats').innerHTML =
           `<span><b>${fmt(list.length)}</b>${srcLabel}</span>` +
           `<span class="deals"><b>${fmt(deals)}</b>Ankaufchancen bei ${(state.margin*100)|0}% Marge</span>` +
@@ -687,7 +696,69 @@
         document.getElementById('grid').innerHTML = list.length
           ? list.slice(0, LIMIT).map(card).join('') +
             (list.length > LIMIT ? `<div class="more">Die ersten ${LIMIT} von ${fmt(list.length)} Fahrzeugen. Filter eingrenzen, um weitere zu sehen.</div>` : '')
-          : `<div class="empty">Keine Fahrzeuge für diese Auswahl.<br /><small>Für „Neue Angebote“ zuerst <code>node pricing/value_newest.js</code> ausführen, für „Eigener Bestand“ <code>node pricing/scrape_dealer.js</code>.</small></div>`;
+          : state.src === 'unseen' && !raw.length
+            ? '<div class="empty">Keine neuen Fahrzeuge seit deinem letzten Besuch.<br /><small>Der nächste Abgleich (<code>npm run nightly</code>) bringt neue Inserate.</small></div>'
+            : `<div class="empty">Keine Fahrzeuge für diese Auswahl.<br /><small>Für „Neue Angebote“ zuerst <code>node pricing/value_newest.js</code> ausführen, für „Eigener Bestand“ <code>node pricing/scrape_dealer.js</code>.</small></div>`;
+        updateUnseen();
+        observeCards();
+      }
+
+      // ---- seen tracking: a car counts as seen after ~2 s on screen or when opened ----
+      const SEEN_AFTER_MS = 2000;
+      const timers = new Map();
+      const onScreen = new Set();
+      const pendingSeen = new Set();
+      let flushTimer = null;
+      function flushSeen(beacon) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+        if (!pendingSeen.size) return;
+        const body = JSON.stringify({ ids: [...pendingSeen] });
+        pendingSeen.clear();
+        if (beacon && navigator.sendBeacon) navigator.sendBeacon('api/seen', body);
+        else fetch('api/seen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+      }
+      function markSeen(ids) {
+        const fresh = ids.map(String).filter((id) => !(id in state.seen.ids));
+        if (!fresh.length) return;
+        state.seen = Seen.markSeen(state.seen, fresh, new Date().toISOString()).state;
+        for (const id of fresh) {
+          pendingSeen.add(id);
+          const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+          if (el) { io.unobserve(el); if (state.src === 'unseen') el.classList.add('seen'); }
+        }
+        updateUnseen();
+        if (!flushTimer) flushTimer = setTimeout(flushSeen, 800);
+      }
+      const startTimer = (id) => { if (!timers.has(id)) timers.set(id, setTimeout(() => { timers.delete(id); markSeen([id]); }, SEEN_AFTER_MS)); };
+      const stopTimer = (id) => { clearTimeout(timers.get(id)); timers.delete(id); };
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          const id = e.target.dataset.id;
+          if (e.isIntersecting) { onScreen.add(id); if (!document.hidden) startTimer(id); }
+          else { onScreen.delete(id); stopTimer(id); }
+        }
+      }, { threshold: 0.6 });
+      function observeCards() {
+        io.disconnect();
+        onScreen.clear();
+        [...timers.keys()].forEach(stopTimer);
+        document.querySelectorAll('.card[data-id]').forEach((el) => {
+          const l = state.active[el.dataset.id];
+          if (l && Seen.isUnseen(state.seen, l)) io.observe(el);
+        });
+      }
+      // a background tab is not looking at anything
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { [...timers.keys()].forEach(stopTimer); flushSeen(true); }
+        else onScreen.forEach(startTimer);
+      });
+      window.addEventListener('pagehide', () => flushSeen(true));
+      function updateUnseen() {
+        const n = (state.data.valuations || []).filter((l) => Seen.isUnseen(state.seen, l)).length;
+        $('unseenCount').textContent = n.toLocaleString('de-DE');
+        $('unseenCount').classList.toggle('on', n > 0);
+        $('markAll').hidden = !(state.src === 'unseen' && n > 0);
       }
 
       // ---- offer modal ----
@@ -751,6 +822,18 @@
         const btn = e.target.closest('.send[data-id]');
         if (btn) openOffer(btn.dataset.id);
       });
+      // opening the listing (or the offer form) means he looked at it
+      for (const type of ['click', 'auxclick'])
+        $('grid').addEventListener(type, (e) => {
+          const el = e.target.closest('a.view, .send[data-id]')?.closest('.card[data-id]');
+          if (el) markSeen([el.dataset.id]);
+        });
+      $('markAll').addEventListener('click', () => {
+        markSeen(state.data.valuations.filter((l) => Seen.isUnseen(state.seen, l)).map((l) => l.id));
+        flushSeen();
+        state.seenBase = state.seen;
+        render();
+      });
       $('margin').addEventListener('input', (e) => {
         state.margin = +e.target.value / 100;
         $('marginLabel').textContent = e.target.value + '%';
@@ -786,7 +869,8 @@
           t.classList.add('active');
           t.setAttribute('aria-selected', 'true');
           state.src = t.dataset.src;
-          document.getElementById('fSort').value = t.dataset.src === 'newest' ? 'recency' : 'delta';
+          if (state.src === 'unseen') state.seenBase = state.seen;
+          document.getElementById('fSort').value = ['unseen', 'newest'].includes(state.src) ? 'recency' : 'delta';
           render();
         }));
 
@@ -808,23 +892,26 @@
       }
 
       (async () => {
-        const [vRes, plz] = await Promise.all([
+        const [vRes, plz, , config, seen] = await Promise.all([
           fetch('valuations.json').then((r) => r.json()).catch(() => ({ listings: [] })),
           fetch('geo/plz.json').then((r) => r.json()).catch(() => null),
           load('newest'),
+          fetch('api/config').then((r) => r.json()).catch(() => ({})),
+          fetch('api/seen').then((r) => r.json()).catch(() => null),
         ]);
+        // without the server (static hosting) seen state lives for this visit only
+        state.seen = state.seenBase = seen?.ids ? seen : Seen.create(new Date().toISOString().slice(0, 10));
+        state.offers = config.offers === true;
         state.plz = plz;
         state.data.valuations = vRes.listings;
         state.calib = vRes.calibration || null;
         // default the margin to the real implied margin of the reference offer
         if (state.calib) {
-          state.margin = state.calib.impliedMarginPct / 100;
-          $('margin').value = state.calib.impliedMarginPct;
-          $('marginLabel').textContent = state.calib.impliedMarginPct + '%';
-          // the implied margin was derived from a real offer, so it already
-          // covers holding cost; defaulting Standkosten on top would double-count
-          // them and the benchmark car would miss its own offer
-          $('holdDays').value = 0;
+          const t = Deal.defaultTerms(state.calib);
+          $('margin').value = Math.round(t.margin * 100);
+          $('marginLabel').textContent = $('margin').value + '%';
+          state.margin = t.margin;
+          $('holdDays').value = t.holdDays;
           holdChanged(false);
           renderCalib();
         }

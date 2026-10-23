@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseKm } = require('./features');
 
-const DATA = path.join(__dirname, '..', 'data');
+const { DATA } = require('../src/paths');
 
 function sameCar(a, b) {
   if (a.model !== b.model || a.attr?.fr !== b.attr?.fr) return false;

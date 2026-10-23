@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { launchBrowser, closeBrowser, getPageState, sleep, jitter } = require('./browser');
 
-const DATA = path.join(__dirname, '..', 'data');
+const { DATA } = require('./paths');
 const RAW = path.join(DATA, 'raw_ads.json');
 const DETAILS = path.join(DATA, 'raw_details.json');
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
@@ -128,7 +128,7 @@ const extractVip = () => {
       fs.writeFileSync(DETAILS, JSON.stringify(details));
       if (fetched % 10 === 0) console.log(`progress: ${fetched}/${LIMIT || pending.length} this run, ${Object.keys(details).length} total`);
     }
-    console.log(`\nDONE this run: ${fetched} fetched, ${Object.keys(details).length}/${ads.length} total in data/raw_details.json`);
+    console.log(`\nDONE this run: ${fetched} fetched, ${Object.keys(details).length}/${ads.length} total in ${DETAILS}`);
     console.log('next: node src/build_details_csv.js');
   } finally {
     fs.writeFileSync(DETAILS, JSON.stringify(details));

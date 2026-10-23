@@ -3,7 +3,7 @@
 // Histogram-based (features are pre-binned into quantile bins), Huber loss so a
 // few absurd listings can't dominate, and optional monotone constraints so the
 // trees can never say "more km = more expensive". The fitted model is plain
-// JSON (bin edges + node arrays) so it can live inside pricing/model.json.
+// JSON (bin edges + node arrays) so it can live inside model.json.
 //
 // opts: { nTrees, lr, depth, minLeaf, bins, subsample, seed, huberDelta, l2,
 //         monotone: array of -1 / 0 / +1 per feature }

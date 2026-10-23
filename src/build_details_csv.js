@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA = path.join(__dirname, '..', 'data');
+const { DATA } = require('./paths');
 const details = JSON.parse(fs.readFileSync(path.join(DATA, 'raw_details.json'), 'utf8'));
 const out = path.join(DATA, 'details.csv');
 

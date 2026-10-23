@@ -1,6 +1,6 @@
 // Scrapes a dealer's own Tesla inventory from their website and values each
 // car against the engine. Their prices are retail asking prices, so this shows
-// where their own stock sits vs the wider market. Output: web/dealer.json
+// where their own stock sits vs the wider market. Output: <data>/dealer.json
 //
 //   DEALER_URL=https://www.example-autohaus.de/angebote/ node pricing/scrape_dealer.js
 //
@@ -12,6 +12,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 const { valuate } = require('./engine');
 const { classifyTrim, REFERENCE_DATE } = require('./features');
+const { DATA, dataFile } = require('../src/paths');
 
 const ROOT = path.join(__dirname, '..');
 const INVENTORY_URL = process.env.DEALER_URL;
@@ -19,7 +20,7 @@ if (!INVENTORY_URL) {
   console.error('Set DEALER_URL to the dealer inventory page, e.g. DEALER_URL=https://www.example-autohaus.de/angebote/');
   process.exit(1);
 }
-const model = JSON.parse(fs.readFileSync(path.join(__dirname, 'model.json'), 'utf8'));
+const model = JSON.parse(fs.readFileSync(dataFile('model.json'), 'utf8'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Build a synthetic ad in the shape featurize()/valuate() expect, from the
@@ -104,10 +105,10 @@ function toAd(l) {
       return { ...l, trim, marketPrice: v.marketPrice, low: v.low, high: v.high,
         deltaPct: v.deltaPct, confidence: v.confidence, extrapolated: v.extrapolated };
     });
-    fs.mkdirSync(path.join(ROOT, 'web'), { recursive: true });
-    fs.writeFileSync(path.join(ROOT, 'web', 'dealer.json'),
+    fs.mkdirSync(DATA, { recursive: true });
+    fs.writeFileSync(dataFile('dealer.json'),
       JSON.stringify({ source: new URL(INVENTORY_URL).hostname, count: listings.length, listings }));
-    console.log(`scraped + valued ${listings.length} dealer listings -> web/dealer.json`);
+    console.log(`scraped + valued ${listings.length} dealer listings -> ${dataFile('dealer.json')}`);
   } finally {
     await ctx.close();
     fs.rmSync(path.join(ROOT, 'profiles', 'dealer'), { recursive: true, force: true });

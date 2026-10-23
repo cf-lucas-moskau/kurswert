@@ -194,7 +194,7 @@ Three independent checks, all currently passing:
 mobile.de does not expose an absolute go-live date anywhere in the accessible
 data (only the dealer's join date). Two honest signals are used instead:
 
-- **mobile.de's own newest-first ordering** (`sb=age`): `value_newest.js` fetches
+- **mobile.de's own newest-first ordering** (`sb=doc&od=down`): `value_newest.js` fetches
   in that order and records each car's `listedRank` (0 = most recently listed).
 - **First-seen tracking** (`first_seen.js`): every scrape stamps the date we
   first observed each id. On repeat runs, genuinely new ids are flagged (`NEU`
@@ -220,7 +220,7 @@ mobile.de login, with the engine's suggested price filled in.
 ## Dealer's own inventory (`scrape_dealer.js`)
 
 Scrapes a dealer's live inventory from their website (`DEALER_URL=...`) and
-values each car against the engine (`web/dealer.json`, "Eigener Bestand" tab).
+values each car against the engine (`dealer.json`, "Eigener Bestand" tab).
 Useful as a sanity check: for the dealer it was built against, asking prices
 landed within ~1-4% of the engine's market estimate.
 
@@ -229,10 +229,12 @@ landed within ~1-4% of the engine's market estimate.
 - `pricing/features.js` — feature extraction + `classifyTrim` (both listing and detail shapes)
 - `pricing/price_history.js` — per-listing asking-price history → data/price_history.json
 - `pricing/label.js` — AI labeling pass (trim/damage/flags) → data/labels.json
+- `pricing/labels.js` — label schema, queue file and result merge; `label_claude.js` labels the queue with Claude Code
+- `pricing/nightly.js` — the unattended, resumable full refresh (`npm run nightly`)
 - `pricing/engine.js` — train / predict / valuate (dependency-free linear algebra)
-- `pricing/train.js` — build `model.json` + `web/valuations.json` from the scrape
-- `pricing/value_newest.js` — fetch freshest listings, value them → `web/newest.json`
-- `pricing/scrape_dealer.js` — scrape + value the dealer's own inventory → `web/dealer.json`
+- `pricing/train.js` — build `model.json` + `valuations.json` (in the data dir) from the scrape
+- `pricing/value_newest.js` — fetch freshest listings, value them → `newest.json`
+- `pricing/scrape_dealer.js` — scrape + value the dealer's own inventory → `dealer.json`
 - `pricing/send_offer.js` — send a templated offer to a listing (dry-run by default)
 - `pricing/first_seen.js` — track first-observed date per listing
 - `pricing/evaluate.js` — cross-validation + rating-alignment harness

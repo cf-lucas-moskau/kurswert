@@ -16,7 +16,7 @@ const { featurize } = require('./features');
 
 // INCLUDE_AS24=0 evaluates on mobile.de alone, for before/after comparisons
 const { ads } = require('./load_ads').loadAds({ includeAs24: process.env.INCLUDE_AS24 !== '0' });
-const labelsPath = path.join(__dirname, '..', 'data', 'labels.json');
+const labelsPath = require('../src/paths').dataFile('labels.json');
 const labels = fs.existsSync(labelsPath) ? JSON.parse(fs.readFileSync(labelsPath, 'utf8')) : {};
 const allRows = ads.map((a) => featurize(a, undefined, labels[a.id])).filter(Boolean).filter((r) => r.price > 0);
 // the market model is clean German resale value; evaluate it on its own domain

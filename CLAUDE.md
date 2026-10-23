@@ -10,8 +10,12 @@ drives everything through you — when they ask to "refresh", "add new cars",
 
 - `src/` — the scraper (Playwright, headed Chrome). Reads listings and detail pages.
 - `pricing/` — the valuation engine, trainer, evaluator, AI labeling, offer sender.
-- `web/` — the dashboard (static page + tiny server with a send-offer endpoint).
-- `data/` — all scraped + generated data (gitignored; regenerate on a fresh clone).
+- `web/` — the dashboard (static page + tiny server: feeds, seen state, send-offer).
+- `data/` — all scraped + generated data, including `model.json` and the
+  dashboard feeds `valuations.json`, `newest.json`, `dealer.json` (gitignored;
+  regenerate on a fresh clone). `KURSWERT_DATA` points every script and the
+  server elsewhere. On Lucas's Mac the live data is `~/code/kurswert/data`;
+  worktrees symlink `data` to it, so there is exactly one copy.
 - `LEARNINGS.md` — how the scraper gets past mobile.de's bot protection.
 - `PRICING.md` — how the valuation engine works and how it's validated.
 
@@ -24,9 +28,10 @@ Run these once, and tell the user what each needs:
    headless is blocked by mobile.de. If Chrome isn't installed, run
    `npx playwright install chrome`.
 3. For AI labeling (`npm run label`) you need Claude API access: either
-   `ANTHROPIC_API_KEY` in the environment, or `ant auth login`. If neither is
-   available, you (Claude Code) can do the labeling yourself with subagents —
-   see "Labeling without an API key" below.
+   `ANTHROPIC_API_KEY` in the environment or in `.env.local` (repo root,
+   gitignored), or `ant auth login`. Without it, or if the API fails,
+   `npm run label` queues the cars and `npm run label-claude` labels them with
+   Claude Code (see "Labeling without an API key" below).
 4. A fresh clone has no `data/` (it's gitignored). Bootstrap it by scraping (step 1
    of the pipeline).
 
@@ -40,11 +45,20 @@ npm run scrape        # 1. all German+EU Tesla listings -> data/raw_ads.json  (~
 npm run scrape-as24   # 1b. AutoScout24 Teslas (8 EU countries) -> data/raw_ads_as24.json (~20 min)
 npm run details       # 2. visit each detail page for descriptions -> data/raw_details.json (~4-5s/car, resumable)
 npm run label         # 3. AI-label trims + damage from descriptions -> data/labels.json (needs API key; resumable)
-npm run train         # 4. train the market model + build web/valuations.json
-npm run value-newest  # 5. fetch freshest arrivals + value them -> web/newest.json
-DEALER_URL=... npm run scrape-dealer # 6. scrape + value a dealer's own inventory -> web/dealer.json
+npm run train         # 4. train the market model -> data/model.json, data/valuations.json
+npm run value-newest  # 5. fetch freshest arrivals + value them -> data/newest.json
+DEALER_URL=... npm run scrape-dealer # 6. scrape + value a dealer's own inventory -> data/dealer.json
 npm run serve         # 7. dashboard at http://localhost:8080
 ```
+
+`npm run nightly` runs the whole refresh unattended (resets, both scrapes,
+value-newest, details, label, train), resumable via `data/nightly_state.json`,
+logging to `data/nightly.log` with a one-line summary at the end. It reads
+`ANTHROPIC_API_KEY` from the environment or the gitignored `.env.local` in the
+repo root (as does `npm run label`), so labeling runs via the API; never print
+or commit that file.
+`--dry-run` logs the plan and changes nothing; `--fresh` restarts an
+unfinished run.
 
 Steps 2 and 3 are the data-quality layer and are the slowest. Steps 4-7 are fast
 and safe to re-run anytime. `npm run evaluate` prints the engine's accuracy;
@@ -52,8 +66,9 @@ and safe to re-run anytime. `npm run evaluate` prints the engine's accuracy;
 
 ## Common requests → what to do
 
-- **"Refresh the market / re-scrape"**: `rm data/raw_ads.json data/progress.json`,
-  then run steps 1→7. Details and labels for still-listed cars are keyed by id and
+- **"Refresh the market / re-scrape"**: `npm run nightly` (it resets the
+  scrape checkpoints itself), or by hand `rm data/raw_ads.json data/progress.json`
+  and run steps 1→7. Details and labels for still-listed cars are keyed by id and
   survive, so only new cars need re-fetching/labeling.
 - **"Show me / get the newest cars" / "fetch the freshest"**: ALWAYS run the full
   four-step vetting, never just the fetch — the user wants every new arrival fully
@@ -61,8 +76,9 @@ and safe to re-run anytime. `npm run evaluate` prints the engine's accuracy;
   ```
   npm run value-newest   # fetch freshest + merge them into data/raw_ads.json
   npm run details        # detail pages for the newly-merged ids
-  npm run label          # AI trim/damage labels for the new ids (or subagents if no API key)
-  npm run train          # retrain + rebuild web/newest.json WITH labels/flags
+  npm run label          # AI trim/damage labels for the new ids (queues them if no API key)
+  npm run label-claude   # only if label queued cars: Claude Code labels them, then retrains
+  npm run train          # retrain + rebuild data/newest.json WITH labels/flags
   ```
   `value-newest` now merges the fresh listings into the dataset and records their
   order in `data/newest_ids.json`; `train` rebuilds the New-arrivals feed from the
@@ -84,15 +100,30 @@ and safe to re-run anytime. `npm run evaluate` prints the engine's accuracy;
 
 ## Labeling without an API key
 
-`npm run label` calls the Claude API. If there's no `ANTHROPIC_API_KEY` / `ant`
-login, do the labeling yourself: read `data/raw_details.json` (each entry's
-`htmlDescription` plus the `damageCondition` attribute), and for each car produce
-the same JSON `label.js` would — `{trueTrim, trimConfidence, condition,
-batteryIssue, isImport, commercialUse, priceCaveats}` — and write it to
-`data/labels.json` keyed by listing id. Fan this out across subagents for speed
-(one chunk each, each returning JSON you merge). The schema and the labeling rules
-are documented at the top of `pricing/label.js` — follow them exactly, especially:
-a "Long Range" with an acceleration boost is NOT a real Performance.
+`npm run label` calls the Claude API. When the first call fails for lack of
+credentials (or with `LABEL_MODE=queue`), it writes every unlabeled car to
+`data/label_queue.json` instead, with the same facts the API prompt reads.
+`train` marks those cars `pendingLabel`: the dashboard shows them tagged
+"Ungeprüft" and never as a Chance until they are labeled.
+
+To label the queue, run
+
+```
+npm run label-claude
+```
+
+It starts a headless Claude Code run (`claude -p`, your Claude login, tools
+limited to Read, Write and subagents) with the prompt in
+`pricing/label_claude.js`. Claude reads the queue, follows `SCHEMA` and
+`buildPrompt` in `pricing/labels.js`, and writes `{ "<id>": label }` files into
+`data/label_results/`. The script then runs `npm run label`, which validates
+every label, merges the good ones into `data/labels.json` (`labeledBy:
+'claude-code-subagent'`) and re-queues the rest, and finally `npm run train`.
+
+If you are the Claude Code session asked to label: do the same by hand. Read the
+queue, label per `pricing/labels.js` (a "Long Range" with an acceleration boost is
+NOT a real Performance), write result files into `data/label_results/`, fan out
+across subagents in chunks of about 40, then `npm run label && npm run train`.
 
 ## Safety and etiquette
 
@@ -103,7 +134,10 @@ a "Long Range" with an acceleration boost is NOT a real Performance.
   mobile.de scrapers.
 - **Scraper Chrome must stay headed.** Headless is detected and blocked.
 - Regenerated data and the trained model are gitignored — commit code and docs,
-  not `data/`, `web/*.json`, or `pricing/model.json`.
+  not `data/`.
+- **'Angebot senden' is localhost-only.** `web/serve.js` disables the endpoint
+  and hides the button when bound to any other host (e.g. Tailscale). `OFFERS=1`
+  overrides; don't set it on a network-reachable server.
 
 ## How the pieces fit (as of Oct 2026)
 

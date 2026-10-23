@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const { valuate } = require('./engine');
+const { dataFile } = require('../src/paths');
 
 const ROOT = path.join(__dirname, '..');
 const PROFILE = path.join(ROOT, 'profiles', 'mobile-session'); // NOT wiped — holds the login
@@ -69,14 +70,14 @@ function buildMessage(cfg, listing, offer) {
 async function sendOffer(listingId, offerArg) {
   const cfg = loadConfig();
   // find the listing + its valuation from the newest feed or full valuations
-  const feeds = ['newest.json', 'valuations.json'].map((f) => path.join(ROOT, 'web', f));
+  const feeds = ['newest.json', 'valuations.json'].map(dataFile);
   let listing = null;
   for (const f of feeds) {
     if (!fs.existsSync(f)) continue;
     listing = JSON.parse(fs.readFileSync(f, 'utf8')).listings.find((l) => String(l.id) === String(listingId));
     if (listing) break;
   }
-  if (!listing) throw new Error(`listing ${listingId} not found in web/newest.json or valuations.json — run train / value-newest first`);
+  if (!listing) throw new Error(`listing ${listingId} not found in newest.json or valuations.json — run train / value-newest first`);
 
   // offer = explicit arg, else the max buy price at the dealer's margin
   const offer = offerArg ? parseInt(offerArg, 10) : Math.round(listing.marketPrice / (1 + (cfg.marginPct ?? 0.15)));

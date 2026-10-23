@@ -1,6 +1,6 @@
 node_modules/
 profiles/
-data/
+/data
 web/valuations.json
 web/newest.json
 web/dealer.json
@@ -16,3 +16,4 @@ pricing/calibration.json
 web/logo.png
 VISION.*
 .impeccable/
+.env*

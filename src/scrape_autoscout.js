@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const { launchBrowser, closeBrowser, getPageState, sleep, jitter } = require('./browser');
 
-const DATA = path.join(__dirname, '..', 'data');
+const { DATA } = require('./paths');
 const RAW = path.join(DATA, 'raw_ads_as24.json');
 const PROGRESS = path.join(DATA, 'progress_as24.json');
 const BASE = 'https://www.autoscout24.de/lst/tesla';
@@ -151,7 +151,7 @@ async function scrapeSegment(min, max) {
     // fixed Tesla-shaped bands; oversized ones are halved recursively
     const cuts = [0, 20000, 28000, 36000, 50000, 10000000];
     for (let i = 0; i < cuts.length - 1; i++) await scrapeSegment(cuts[i] === 0 ? 0 : cuts[i] + 1, cuts[i + 1]);
-    console.log(`\nDONE: ${ads.size} unique listings in data/raw_ads_as24.json`);
+    console.log(`\nDONE: ${ads.size} unique listings in ${RAW}`);
   } finally {
     saveState();
     await closeBrowser();

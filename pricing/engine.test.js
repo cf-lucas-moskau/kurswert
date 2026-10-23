@@ -5,7 +5,7 @@ const path = require('path');
 const { train, predict, valuate } = require('./engine');
 const { featurize, classifyTrim, parseRegDate, parseKm, parseKw } = require('./features');
 
-const ads = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'raw_ads.json'), 'utf8'));
+const ads = JSON.parse(fs.readFileSync(require('../src/paths').dataFile('raw_ads.json'), 'utf8'));
 const rows = ads.map((a) => featurize(a)).filter(Boolean);
 const model = train(rows);
 

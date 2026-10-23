@@ -10,33 +10,28 @@
 //   node pricing/value_newest.js   # fetch freshest + merge into the dataset
 //   node src/fetch_details.js      # detail pages for the newly-merged ids
 //   node pricing/label.js          # AI trim/damage labels for the new ids
-//   node pricing/train.js          # retrain + rebuild web/newest.json WITH labels
+//   node pricing/train.js          # retrain + rebuild newest.json WITH labels
 //
-// value_newest writes a provisional web/newest.json immediately (no labels yet);
+// value_newest writes a provisional newest.json immediately (no labels yet);
 // train.js overwrites it with the fully-vetted version once labels exist.
-// Requires a trained model (pricing/model.json).
+// Requires a trained model (model.json in the data dir).
 const fs = require('fs');
-const path = require('path');
 const { launchBrowser, closeBrowser, getPageState, sleep, jitter } = require('../src/browser');
+const { extractSrp } = require('../src/srp');
 const { valuate } = require('./engine');
 const { featurize } = require('./features');
 const firstSeen = require('./first_seen');
 const priceHistory = require('./price_history');
+const { dataFile } = require('../src/paths');
 
-const ROOT = path.join(__dirname, '..');
 const MAKE_ID = process.env.MAKE_ID || '135';
 const PAGES = parseInt(process.env.PAGES || '3', 10);
-const model = JSON.parse(fs.readFileSync(path.join(__dirname, 'model.json'), 'utf8'));
-
-const extractSrp = () => {
-  const sr = window.__INITIAL_STATE__?.search?.srp?.data?.searchResults;
-  return sr?.items ? { items: sr.items } : null;
-};
+const model = JSON.parse(fs.readFileSync(dataFile('model.json'), 'utf8'));
 
 function newestUrl(page) {
   const p = new URLSearchParams({
     dam: 'false', isSearchRequest: 'true', ms: `${MAKE_ID};;;`,
-    ref: 'srp', sb: 'age', od: 'up', vc: 'Car', // sb=age&od=up = most recently listed first
+    ref: 'srp', sb: 'doc', od: 'down', vc: 'Car', // sb=doc&od=down = most recently listed first
   });
   if (page > 1) p.set('pageNumber', String(page));
   return `https://suchen.mobile.de/fahrzeuge/search.html?${p.toString()}`;
@@ -47,11 +42,11 @@ function newestUrl(page) {
   const seen = new Set();
   const rawItems = []; // full ad objects, to merge into the market dataset
   const out = [];
-  let rank = 0; // position in the newest-first (sb=age) ordering = listing recency
+  let rank = 0; // position in the newest-first (sb=doc) ordering = listing recency
   try {
     for (let pg = 1; pg <= PAGES; pg++) {
       if (pg > 1) await sleep(jitter());
-      const { items } = await getPageState(newestUrl(pg), extractSrp);
+      const { items } = (await getPageState(newestUrl(pg), extractSrp)).searchResults;
       for (const ad of items) {
         if (!ad.id || seen.has(ad.id)) continue;
         seen.add(ad.id);
@@ -85,7 +80,7 @@ function newestUrl(page) {
 
     // Merge the fresh listings into the market dataset so details/label/train
     // reach them. Same object shape as the full scrape's search-result items.
-    const RAW = path.join(ROOT, 'data', 'raw_ads.json');
+    const RAW = dataFile('raw_ads.json');
     const existing = fs.existsSync(RAW) ? JSON.parse(fs.readFileSync(RAW, 'utf8')) : [];
     const indexById = new Map(existing.map((a, i) => [a.id, i]));
     let addedRaw = 0;
@@ -101,11 +96,11 @@ function newestUrl(page) {
     // a crash in the merge can't leave history ahead of the dataset.
     priceHistory.observe(rawItems);
     out.forEach((l) => { l.priceDrop = priceHistory.dropInfo(l.id); });
-    fs.writeFileSync(path.join(ROOT, 'web', 'newest.json'), JSON.stringify({ fetchedAt: today, listings: out }));
-    console.log(`wrote ${out.length} freshly-listed + valued cars (${isNew.size} new to us) -> web/newest.json`);
+    fs.writeFileSync(dataFile('newest.json'), JSON.stringify({ fetchedAt: today, listings: out }));
+    console.log(`wrote ${out.length} freshly-listed + valued cars (${isNew.size} new to us) -> newest.json`);
     // record the fresh-listing order so train.js can rebuild newest.json (with
     // labels) in true listing-recency order
-    fs.writeFileSync(path.join(ROOT, 'data', 'newest_ids.json'),
+    fs.writeFileSync(dataFile('newest_ids.json'),
       JSON.stringify({ fetchedAt: today, ids: out.map((l) => l.id) }));
     console.log(`merged ${addedRaw} new + refreshed ${updated} known listings in data/raw_ads.json (${existing.length} total)`);
     console.log('next: npm run details && npm run label && npm run train  (fully vets the new arrivals)');
