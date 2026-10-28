@@ -20,6 +20,7 @@ const { launchBrowser, closeBrowser, getPageState, sleep, jitter } = require('..
 const { extractSrp } = require('../src/srp');
 const { valuate } = require('./engine');
 const { featurize } = require('./features');
+const { classifyListing } = require('./trim');
 const firstSeen = require('./first_seen');
 const priceHistory = require('./price_history');
 const { dataFile } = require('../src/paths');
@@ -61,6 +62,7 @@ function newestUrl(page) {
           title: ad.shortTitle,
           variant: ad.subTitle,
           trim: f?.trimLabel || null,
+          trimClass: classifyListing(ad),
           listedRank: rank++, // 0 = most recently listed on mobile.de
           year: (ad.attr?.fr || '').slice(-4) || null,
           ...listingFields(ad),

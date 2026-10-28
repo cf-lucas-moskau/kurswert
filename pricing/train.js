@@ -14,6 +14,7 @@ const priceHistory = require('./price_history');
 const { loadAds, makeTrainingFilter } = require('./load_ads');
 const { DATA, dataFile } = require('../src/paths');
 const { needsLabel } = require('./labels');
+const { classifyListing, TRIMS, UNKNOWN } = require('./trim');
 
 // mobile.de + AutoScout24 (cross-posted cars counted once)
 const { ads, crossPosts } = loadAds();
@@ -65,14 +66,16 @@ for (const a of ads) {
   const asking = a.price.grossAmount;
   // a flagged car (accident, defect, salvage) is not a clean deal even if cheap
   const flagged = !!(label && (label.condition !== 'clean' || label.batteryIssue));
+  const tc = classifyListing(a, details[a.id], label);
   out.push({
     id: a.id,
     url: a.url || `https://suchen.mobile.de/fahrzeuge/details.html?id=${a.id}`,
     source: a.source || 'mobile.de',
-    model: a.model,
+    model: tc.model === UNKNOWN ? a.model : tc.model, // 'Andere' -> Cybertruck
     title: a.shortTitle,
     variant: a.subTitle,
     trim: f.trimLabel,
+    trimClass: tc, // the real variant for the dashboard's filter (trim.js)
     condition: label?.condition || null,
     caveats: label?.priceCaveats || [],
     flagged,
@@ -146,7 +149,7 @@ if (fs.existsSync(calibPath)) {
 
 fs.writeFileSync(
   dataFile('valuations.json'),
-  JSON.stringify({ generatedFrom: trainRows.length, referenceDate: model.referenceDate, calibration, listings: out })
+  JSON.stringify({ generatedFrom: trainRows.length, referenceDate: model.referenceDate, calibration, trims: TRIMS, listings: out })
 );
 console.log(`wrote ${out.length} valuations -> valuations.json`);
 

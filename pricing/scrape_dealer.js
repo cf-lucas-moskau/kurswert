@@ -12,6 +12,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 const { valuate } = require('./engine');
 const { classifyTrim, REFERENCE_DATE } = require('./features');
+const { classify } = require('./trim');
 const { DATA, dataFile } = require('../src/paths');
 
 const ROOT = path.join(__dirname, '..');
@@ -102,7 +103,8 @@ function toAd(l) {
     const listings = raw.map((l) => {
       const v = valuate(model, toAd(l), 0.15);
       const trim = classifyTrim(l.model, l.title).label;
-      return { ...l, trim, marketPrice: v.marketPrice, low: v.low, high: v.high,
+      const trimClass = classify({ model: l.model, text: l.title, reg: l.year ? +l.year : null });
+      return { ...l, trim, trimClass, marketPrice: v.marketPrice, low: v.low, high: v.high,
         deltaPct: v.deltaPct, confidence: v.confidence, extrapolated: v.extrapolated };
     });
     fs.mkdirSync(DATA, { recursive: true });

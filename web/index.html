@@ -146,6 +146,16 @@
       .filters-in { max-width: 1680px; margin: 0 auto; padding: 12px 28px 14px; display: flex; align-items: flex-end; gap: 14px 24px; flex-wrap: wrap; }
       .linkbtn { background: none; border: 0; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; height: 34px; padding: 0 2px; }
       .linkbtn:hover { text-decoration: underline; }
+      .trims { flex: 1 1 100%; gap: 8px; }
+      .trims[hidden] { display: none; }
+      #trimRows { display: flex; flex-direction: column; gap: 6px; }
+      .trimrow { display: flex; align-items: flex-start; gap: 6px 8px; }
+      .trimrow > .lbl { width: 76px; flex: none; line-height: 30px; color: var(--ink-2); font-weight: 600; }
+      .trimrow[hidden] { display: none; }
+      .trimrow .chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+      .chip.sm { height: 30px; padding: 0 10px; gap: 6px; font-size: 12.5px; }
+      .chip .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+      .chip.empty:not(:has(input:checked)) { opacity: .45; }
 
       /* ---------- summary ---------- */
       main { max-width: 1680px; margin: 0 auto; padding: 0 28px 48px; }
@@ -198,6 +208,8 @@
       .bare .ph .noimg { display: none; }
       .bare .ribbon { position: static; padding: 14px 16px 0; }
       .ttl .trim { color: var(--ink-2); font-weight: 500; }
+      .ttl .trim.est { text-decoration: underline dotted var(--ink-3); text-underline-offset: 3px; }
+      .ttl .trim.unk { color: var(--ink-3); font-size: 13px; }
       .var { margin: 2px 0 0; color: var(--ink-3); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .conf { flex: none; font-size: 11px; font-weight: 600; padding: 3px 7px; border-radius: 6px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; margin-top: 1px; }
       .conf.high { color: var(--good); background: var(--good-bg); }
@@ -304,6 +316,9 @@
         .push { margin-left: 0; }
         .filters-in { padding: 12px 16px 14px; gap: 12px; }
         .filters-in .ctrl { flex: 1 1 140px; }
+        .filters-in .trims { flex-basis: 100%; }
+        .trimrow { flex-direction: column; gap: 4px; }
+        .trimrow > .lbl { line-height: 1.4; }
         main { padding: 0 16px 40px; }
         .legend { margin-left: 0; }
         .grid { grid-template-columns: 1fr; gap: 14px; }
@@ -418,6 +433,10 @@
               <input type="number" id="fPriceMax" class="field w-m num" min="0" step="1000" placeholder="bis" aria-label="Preis bis" />
             </div>
           </div>
+          <div class="ctrl trims" id="fTrims" role="group" aria-labelledby="fTrimsLbl" hidden>
+            <span class="lbl" id="fTrimsLbl">Variante</span>
+            <div id="trimRows"></div>
+          </div>
           <button type="button" id="fReset" class="linkbtn">Filter zurücksetzen</button>
         </div>
       </div>
@@ -498,6 +517,17 @@
       const CONF_LABEL = { high: 'Sicher', medium: 'Mittel', low: 'Unsicher' };
       const displayTitle = (l) => String(l.title || l.model || '').replace(/^Tesla\s+/i, '');
 
+      // the real variant from pricing/trim.js; feeds built before it fall back to the engine's trim
+      const TRIM_SOURCE = { text: 'laut Inserat', 'ai-label': 'laut Beschreibung (KI-Prüfung)', specs: 'abgeleitet aus Leistung, Batterie, Antrieb und Erstzulassung' };
+      function trimBadge(l) {
+        const tc = l.trimClass;
+        if (!tc) return l.trim && !displayTitle(l).toLowerCase().includes(l.trim.toLowerCase()) ? ` <span class="trim">${esc(l.trim)}</span>` : '';
+        if (tc.trim === 'unbekannt') return ' <span class="trim unk" title="Inserat nennt die Variante nicht, und Leistung, Batterie und Erstzulassung passen zu mehreren">· Variante unbekannt</span>';
+        const [source] = tc.rule.split(':');
+        const why = `Variante ${tc.label}: ${TRIM_SOURCE[source] || source}${tc.confidence === 'mittel' ? ' (nicht ausdrücklich genannt)' : ''}. Regel ${tc.rule}`;
+        return ` <span class="trim${tc.confidence === 'mittel' ? ' est' : ''}" title="${esc(why)}">${esc(tc.label).replace(/ kWh$/, '&nbsp;kWh')}</span>`;
+      }
+
       // status markers on the photo: only the two that drive action
       function ribbon(l) {
         let r = '';
@@ -568,7 +598,7 @@
           line([place ? esc(place) + dist : '', observed ? `<span class="dim">${observed}</span>` : '']);
         const region = l.regionPct ? `<span title="Regionale Preisanpassung (PLZ-Zone)">Region ${l.regionPct > 0 ? '+' : '−'}${Math.abs(l.regionPct)}%</span>` : '';
         const dropLine = l.priceDrop ? `<div class="was num">vorher ${euro(l.priceDrop.firstPrice)} · zuletzt gesenkt ${esc(l.priceDrop.lastDropDate)}</div>` : '';
-        const trim = l.trim && !displayTitle(l).toLowerCase().includes(l.trim.toLowerCase()) ? ` <span class="trim">${esc(l.trim)}</span>` : '';
+        const trim = trimBadge(l);
         const variant = l.variant && l.variant.trim() !== (l.trim || '') ? esc(l.variant) : '';
         const seenCls = state.src === 'unseen' && !Seen.isUnseen(state.seen, l) ? ' seen' : '';
         return `<article class="card${l.isDealNow ? ' deal' : ''}${seenCls}"${l.id != null ? ` data-id="${esc(l.id)}"` : ''}>
@@ -621,6 +651,46 @@
       }
       const regYear = (l) => Number(l.year || (l.firstReg || '').slice(-4)) || null;
 
+      // ---- trim (Variante) filter: chips per model, OR within the selection,
+      // AND with every other filter; kept in the URL as ?trim=Model%203|Performance
+      const trimKey = (l) => `${l.model}|${l.trimClass ? l.trimClass.trim : 'unbekannt'}`;
+      state.trims = new Set(new URLSearchParams(location.search).getAll('trim'));
+      function saveTrims() {
+        const p = new URLSearchParams(location.search);
+        p.delete('trim');
+        for (const t of state.trims) p.append('trim', t);
+        const qs = p.toString();
+        history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+      }
+      function buildTrimChips(all) {
+        const order = state.trimOrder || {};
+        const byModel = {};
+        for (const l of all) if (l.trimClass) (byModel[l.model] ||= new Set()).add(l.trimClass.trim);
+        const models = Object.keys(byModel).sort((a, b) => (Object.keys(order).indexOf(a) + 1 || 99) - (Object.keys(order).indexOf(b) + 1 || 99) || a.localeCompare(b));
+        const rank = (m, t) => t === 'unbekannt' ? 999 : (order[m] || []).indexOf(t) + 1 || 500;
+        $('trimRows').innerHTML = models.map((m) => {
+          const trims = [...byModel[m]].sort((a, b) => rank(m, a) - rank(m, b) || a.localeCompare(b));
+          const chips = trims.map((t) => {
+            const key = `${m}|${t}`;
+            return `<label class="chip sm" data-key="${esc(key)}"><input type="checkbox" value="${esc(key)}"${state.trims.has(key) ? ' checked' : ''} /> ${esc(/^\d+$/.test(t) ? `${t} kWh` : t)} <span class="n"></span></label>`;
+          }).join('');
+          return `<div class="trimrow" data-model="${esc(m)}"><span class="lbl">${esc(m)}</span><div class="chips">${chips}</div></div>`;
+        }).join('');
+        $('fTrims').hidden = !models.length;
+      }
+      // counts show what each chip would add under the other filters
+      function updateTrimChips(listBeforeTrim) {
+        const n = {};
+        for (const l of listBeforeTrim) n[trimKey(l)] = (n[trimKey(l)] || 0) + 1;
+        const m = $('fModel').value;
+        document.querySelectorAll('#trimRows .trimrow').forEach((row) => { row.hidden = !!m && row.dataset.model !== m; });
+        document.querySelectorAll('#trimRows .chip').forEach((c) => {
+          const k = n[c.dataset.key] || 0;
+          c.querySelector('.n').textContent = k.toLocaleString('de-DE');
+          c.classList.toggle('empty', !k);
+        });
+      }
+
       function applyFilters(list) {
         const zip = val('fZip');
         const origin = /^\d{5}$/.test(zip) ? state.plz?.[zip] : null;
@@ -652,7 +722,7 @@
           for (const id of FILTER_IDS) if (saved[id] != null) document.getElementById(id).value = saved[id];
         } catch {}
       }
-      const activeFilterCount = () => FILTER_IDS.filter((id) => val(id) !== '').length;
+      const activeFilterCount = () => FILTER_IDS.filter((id) => val(id) !== '').length + (state.trims.size && !$('fTrims').hidden ? 1 : 0);
       function setFilterPanel(open, persist = true) {
         $('filterPanel').hidden = !open;
         $('filterToggle').setAttribute('aria-expanded', String(open));
@@ -668,6 +738,11 @@
         if (document.getElementById('fDeals').checked) list = list.filter((l) => l.isDealNow);
         if (document.getElementById('fDe').checked) list = list.filter((l) => !l.isImport);
         list = applyFilters(list);
+        updateTrimChips(list);
+        // with one model picked, chips of the other (hidden) models don't apply;
+        // a feed without classifications (no chips) is never trim-filtered
+        const trims = $('fTrims').hidden ? [] : [...state.trims].filter((k) => !m || k.startsWith(`${m}|`));
+        if (trims.length) list = list.filter((l) => trims.includes(trimKey(l)));
         const sort = document.getElementById('fSort').value;
         list.sort((a, b) =>
           sort === 'market' ? b.marketPrice - a.marketPrice :
@@ -860,6 +935,15 @@
       $('fReset').addEventListener('click', () => {
         for (const id of FILTER_IDS) $(id).value = '';
         saveFilters();
+        state.trims.clear();
+        document.querySelectorAll('#trimRows input').forEach((i) => { i.checked = false; });
+        saveTrims();
+        render();
+      });
+      $('trimRows').addEventListener('change', (e) => {
+        const i = e.target;
+        if (i.checked) state.trims.add(i.value); else state.trims.delete(i.value);
+        saveTrims();
         render();
       });
       $('filterToggle').addEventListener('click', () => setFilterPanel($('filterPanel').hidden));
@@ -905,6 +989,7 @@
         state.plz = plz;
         state.data.valuations = vRes.listings;
         state.calib = vRes.calibration || null;
+        state.trimOrder = vRes.trims || null;
         // default the margin to the real implied margin of the reference offer
         if (state.calib) {
           const t = Deal.defaultTerms(state.calib);
@@ -922,6 +1007,7 @@
         for (const sel of ['fRegFrom', 'fRegTo'])
           for (const y of years) { const o = document.createElement('option'); o.value = o.textContent = y; $(sel).appendChild(o); }
         restoreFilters();
+        buildTrimChips(all);
         let open = null;
         try { open = localStorage.getItem('filtersOpen'); } catch {}
         setFilterPanel(open === '1' || (open == null && activeFilterCount() > 0), false);

@@ -17,7 +17,8 @@
     "scrape-dealer": "node pricing/scrape_dealer.js",
     "send-offer": "node pricing/send_offer.js",
     "evaluate": "node pricing/evaluate.js",
-    "test": "node pricing/engine.test.js && node pricing/price_history.test.js && node pricing/load_ads.test.js && node pricing/labels.test.js && node pricing/nightly.test.js && node web/seen.test.js",
+    "trim-report": "node pricing/trim_report.js",
+    "test": "node pricing/engine.test.js && node pricing/price_history.test.js && node pricing/load_ads.test.js && node pricing/labels.test.js && node pricing/nightly.test.js && node pricing/trim.test.js && node web/seen.test.js",
     "serve": "node web/serve.js"
   },
   "dependencies": {
